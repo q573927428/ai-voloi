@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.models import Kline, ScannerRun, Signal, Symbol
 from app.schemas import (
+    ActiveSymbolRead,
     ConfigUpdate,
     ConfigValues,
     DashboardStats,
@@ -50,6 +51,17 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_db)) -
         last_scan_duration_ms=last_run.duration_ms if last_run else None,
         today_signal_count=today, current_signal_count=len(request.app.state.broadcaster.connections),
     )
+
+
+@router.get("/markets/active", response_model=list[ActiveSymbolRead])
+async def active_markets(session: AsyncSession = Depends(get_db)) -> list[ActiveSymbolRead]:
+    """返回活跃交易池及其最近一次 24h 行情，供仪表盘查看完整明细。"""
+    rows = (await session.execute(
+        select(Symbol)
+        .where(Symbol.is_active.is_(True))
+        .order_by(Symbol.quote_volume_24h.desc().nullslast(), Symbol.symbol.asc())
+    )).scalars().all()
+    return [ActiveSymbolRead.model_validate(row) for row in rows]
 
 
 @router.get("/signals", response_model=SignalPage)

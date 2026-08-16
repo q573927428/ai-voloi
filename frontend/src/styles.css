@@ -23,7 +23,12 @@ main { min-width: 0; }
 .metric:nth-last-child(-n+3) { border-bottom: 0; }
 .metric-label { margin: 0 0 15px; color: #6c7886; font-size: 13px; }
 .metric-value { margin: 0; font-size: 29px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.metric-value-button { display: block; padding: 0; border: 0; background: transparent; color: #b57912; cursor: pointer; font-family: inherit; line-height: normal; }
+.metric-value-button:hover { color: #8d5c08; text-decoration: underline; text-underline-offset: 4px; }
+.metric-value-button:focus-visible { border-radius: 3px; outline: 2px solid #b57912; outline-offset: 4px; }
 .metric-note { margin-top: 6px; color: #8a95a1; font-size: 12px; }
+.pool-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; color: #6c7886; font-size: 13px; }
+.pool-toolbar .el-input { width: 240px; }
 .section { margin-top: 24px; }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .section-head h2 { margin: 0; font-size: 16px; letter-spacing: 0; }
@@ -71,4 +76,6 @@ main { min-width: 0; }
   .metric, .metric:nth-child(n) { min-height: 105px; border-right: 0; border-bottom: 1px solid #e5e9ed; }
   .metric:last-child { border-bottom: 0; }
   .form-row { grid-template-columns: 1fr; gap: 10px; }
+  .pool-toolbar { align-items: stretch; flex-direction: column; }
+  .pool-toolbar .el-input { width: 100%; }
 }

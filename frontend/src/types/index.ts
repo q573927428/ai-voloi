@@ -11,6 +11,17 @@ export interface DashboardStats {
   current_signal_count: number
 }
 
+/** 活跃交易池明细，数值字段来自最近一次 24h ticker 快照。 */
+export interface ActiveSymbol {
+  symbol: string
+  base_asset: string
+  quote_asset: string
+  last_price: string | null
+  price_change_percent_24h: string | null
+  quote_volume_24h: string | null
+  updated_at: string
+}
+
 /** 不可变 Signal 市场快照，字段保留检测时刻的原始数值。 */
 export interface SignalSnapshot {
   id: string

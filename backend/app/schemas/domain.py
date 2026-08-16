@@ -144,3 +144,15 @@ class DashboardStats(BaseModel):
     last_scan_duration_ms: int | None
     today_signal_count: int
     current_signal_count: int
+
+
+class ActiveSymbolRead(BaseModel):
+    """活跃交易池中的交易对及最近一次 24h 市场快照。"""
+    model_config = ConfigDict(from_attributes=True)
+    symbol: str
+    base_asset: str
+    quote_asset: str
+    last_price: Decimal | None
+    price_change_percent_24h: Decimal | None
+    quote_volume_24h: Decimal | None
+    updated_at: datetime
