@@ -1,6 +1,6 @@
 # Binance VolOI Surveillance
 
-一个面向 Binance USDⓈ-M USDT 永续合约的异步监控平台。系统通过 REST 初始化历史 K 线、WebSocket 实时维护当前 K 线，并严格对齐时间边界扫描“预计成交量异常 + OI 增长”组合信号。
+一个面向 Binance USDⓈ-M USDT 永续合约的异步监控平台，覆盖标准永续及美股、ETF、贵金属、能源等 TradFi 永续。系统通过 REST 初始化历史 K 线、WebSocket 实时维护当前 K 线，并严格对齐时间边界扫描“预计成交量异常 + OI 增长”组合信号。
 
 ## 项目结构
 

@@ -67,10 +67,17 @@ class BinanceClient:
         raise RuntimeError("Binance request failed") from last_error
 
     async def exchange_symbols(self) -> list[dict[str, str]]:
+        """返回系统支持的 USDT 永续合约，包括标准永续和全部 TradFi 永续。"""
         data = await self._get("/fapi/v1/exchangeInfo")
         return [
             item for item in data["symbols"]
-            if item["contractType"] == "PERPETUAL" and item["status"] == "TRADING" and item["quoteAsset"] == "USDT"
+            if item["status"] == "TRADING"
+            and item["quoteAsset"] == "USDT"
+            and (
+                item["contractType"] == "PERPETUAL"
+                # 美股、ETF、贵金属和能源等 TradFi 合约的行情、K 线与 OI 接口均兼容现有链路。
+                or item["contractType"] == "TRADIFI_PERPETUAL"
+            )
         ]
 
     async def tickers(self) -> dict[str, TickerData]:

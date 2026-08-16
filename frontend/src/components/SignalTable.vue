@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { View } from '@element-plus/icons-vue'
 import type { SignalSnapshot } from '../types'
+import MarketSymbol from './MarketSymbol.vue'
 
 /** 表格输入与跳转事件，rows 为不可变快照列表。 */
 defineProps<{ rows: SignalSnapshot[]; loading?: boolean }>()
@@ -14,7 +15,7 @@ const dateTime = (value: string) => new Date(value).toLocaleString('zh-CN', { ho
 <template>
   <el-table :data="rows" :loading="loading" height="520" stripe empty-text="暂无符合条件的 Signal">
     <el-table-column label="检测时间" min-width="166"><template #default="{ row }">{{ dateTime(row.detected_at) }}</template></el-table-column>
-    <el-table-column prop="symbol" label="交易对" min-width="120" fixed="left"><template #default="{ row }"><strong>{{ row.symbol }}</strong></template></el-table-column>
+    <el-table-column prop="symbol" label="交易对" min-width="180" fixed="left"><template #default="{ row }"><MarketSymbol :symbol="row.symbol" :is-tradfi="row.is_tradfi" /></template></el-table-column>
     <el-table-column prop="timeframe" label="周期" width="72" />
     <el-table-column label="当前价格" min-width="116" align="right"><template #default="{ row }"><span class="number">{{ Number(row.current_price).toLocaleString() }}</span></template></el-table-column>
     <el-table-column label="进度" width="90" align="right"><template #default="{ row }">{{ Number(row.progress_percent).toFixed(1) }}%</template></el-table-column>

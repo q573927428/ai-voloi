@@ -62,6 +62,7 @@ class SignalRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     symbol: str
+    is_tradfi: bool = False
     timeframe: str
     detected_at: datetime
     open_time: datetime
@@ -152,6 +153,7 @@ class ActiveSymbolRead(BaseModel):
     symbol: str
     base_asset: str
     quote_asset: str
+    contract_type: str
     is_active: bool
     last_price: Decimal | None
     price_change_percent_24h: Decimal | None

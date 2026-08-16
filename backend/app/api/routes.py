@@ -94,9 +94,21 @@ async def list_signals(
     column = getattr(Signal, sort_by)
     ordering = asc(column) if sort_order == "asc" else desc(column)
     rows = (await session.execute(
-        select(Signal).where(*filters).order_by(ordering).offset((page - 1) * page_size).limit(page_size)
-    )).scalars().all()
-    return SignalPage(items=[SignalRead.model_validate(row) for row in rows], total=total, page=page, page_size=page_size)
+        select(Signal, Symbol.contract_type)
+        .join(Symbol, Symbol.symbol == Signal.symbol)
+        .where(*filters)
+        .order_by(ordering)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )).all()
+    # Signal 表保留不可变行情快照，合约分类从交易对主数据关联，历史记录也能获得最新的 TradFi 标识。
+    items = [
+        SignalRead.model_validate(signal).model_copy(
+            update={"is_tradfi": contract_type == "TRADIFI_PERPETUAL"}
+        )
+        for signal, contract_type in rows
+    ]
+    return SignalPage(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.get("/signals/{signal_id}")
@@ -107,7 +119,12 @@ async def signal_detail(signal_id: UUID, session: AsyncSession = Depends(get_db)
     )).scalar_one_or_none()
     if not signal:
         raise HTTPException(status_code=404, detail="Signal not found")
-    snapshot = SignalRead.model_validate(signal).model_dump(mode="json")
+    contract_type = await session.scalar(
+        select(Symbol.contract_type).where(Symbol.symbol == signal.symbol)
+    )
+    snapshot = SignalRead.model_validate(signal).model_copy(
+        update={"is_tradfi": contract_type == "TRADIFI_PERPETUAL"}
+    ).model_dump(mode="json")
     performance = signal.future_performance
     snapshot["future_performance"] = {
         key: str(getattr(performance, key)) if getattr(performance, key) is not None else None

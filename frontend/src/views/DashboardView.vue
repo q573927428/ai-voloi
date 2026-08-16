@@ -5,6 +5,7 @@ import { Refresh, Search, VideoPlay } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { api, errorMessage } from '../api/client'
+import MarketSymbol from '../components/MarketSymbol.vue'
 import SignalTable from '../components/SignalTable.vue'
 import type { ActiveSymbol, DashboardStats, SignalSnapshot } from '../types'
 
@@ -108,7 +109,7 @@ onUnmounted(() => timer && window.clearInterval(timer))
       <el-input v-model="poolKeyword" :prefix-icon="Search" clearable placeholder="搜索交易对" aria-label="搜索交易对" />
     </div>
     <el-table v-loading="poolLoading" :data="filteredMarkets" height="calc(100vh - 170px)" stripe :empty-text="marketMode === 'all' ? '暂无永续合约' : '暂无活跃交易对'">
-      <el-table-column prop="symbol" label="交易对" min-width="130" fixed="left"><template #default="{ row }"><strong>{{ row.symbol }}</strong></template></el-table-column>
+      <el-table-column prop="symbol" label="交易对" min-width="190" fixed="left"><template #default="{ row }"><MarketSymbol :symbol="row.symbol" :is-tradfi="row.contract_type === 'TRADIFI_PERPETUAL'" /></template></el-table-column>
       <el-table-column prop="base_asset" label="基础资产" min-width="100" />
       <el-table-column v-if="marketMode === 'all'" label="活跃状态" min-width="100"><template #default="{ row }"><el-tag :type="row.is_active ? 'success' : 'info'" effect="plain" size="small">{{ row.is_active ? '已加入' : '未加入' }}</el-tag></template></el-table-column>
       <el-table-column label="最新价" min-width="140" align="right"><template #default="{ row }"><span class="number">{{ price(row.last_price) }}</span></template></el-table-column>

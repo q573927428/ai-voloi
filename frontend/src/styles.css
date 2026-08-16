@@ -35,6 +35,8 @@ main { min-width: 0; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px; border: 1px solid #dfe4e9; border-bottom: 0; background: #fff; }
 .table-frame { border: 1px solid #dfe4e9; background: #fff; }
 .number { font-variant-numeric: tabular-nums; }
+.market-symbol { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.tradfi-tag { font-weight: 650; }
 .positive { color: #14805e; font-weight: 600; }
 .negative { color: #c54d4a; }
 .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; border: 1px solid #dfe4e9; border-radius: 7px; overflow: hidden; background: #dfe4e9; }

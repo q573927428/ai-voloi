@@ -16,6 +16,7 @@ export interface ActiveSymbol {
   symbol: string
   base_asset: string
   quote_asset: string
+  contract_type: string
   is_active: boolean
   last_price: string | null
   price_change_percent_24h: string | null
@@ -27,6 +28,7 @@ export interface ActiveSymbol {
 export interface SignalSnapshot {
   id: string
   symbol: string
+  is_tradfi: boolean
   timeframe: string
   detected_at: string
   open_time: string
