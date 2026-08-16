@@ -68,6 +68,7 @@ docker-compose.yml          PostgreSQL、后端、前端编排
 | --- | --- | --- |
 | `GET` | `/api/health` | API、采集器、Binance WebSocket 状态 |
 | `GET` | `/api/dashboard` | 交易池、扫描和今日 Signal 指标 |
+| `GET` | `/api/markets/all` | 全部 USDT 永续合约及 24h 行情快照 |
 | `GET` | `/api/markets/active` | 活跃交易池及最近一次 24h 行情快照 |
 | `GET` | `/api/signals` | Signal 分页、搜索、周期筛选和排序 |
 | `GET` | `/api/signals/{id}` | 完整快照及未来表现 |

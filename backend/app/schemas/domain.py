@@ -147,11 +147,12 @@ class DashboardStats(BaseModel):
 
 
 class ActiveSymbolRead(BaseModel):
-    """活跃交易池中的交易对及最近一次 24h 市场快照。"""
+    """永续合约交易对、活跃池状态及最近一次 24h 市场快照。"""
     model_config = ConfigDict(from_attributes=True)
     symbol: str
     base_asset: str
     quote_asset: str
+    is_active: bool
     last_price: Decimal | None
     price_change_percent_24h: Decimal | None
     quote_volume_24h: Decimal | None

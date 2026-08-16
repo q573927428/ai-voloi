@@ -6,6 +6,7 @@ const client = axios.create({ baseURL: '/api', timeout: 15000 })
 
 export const api = {
   dashboard: () => client.get<DashboardStats>('/dashboard').then(({ data }) => data),
+  allMarkets: () => client.get<ActiveSymbol[]>('/markets/all').then(({ data }) => data),
   activeMarkets: () => client.get<ActiveSymbol[]>('/markets/active').then(({ data }) => data),
   signals: (params: SignalQuery) => client.get<SignalPage>('/signals', { params }).then(({ data }) => data),
   signal: (id: string) => client.get<SignalSnapshot>(`/signals/${id}`).then(({ data }) => data),

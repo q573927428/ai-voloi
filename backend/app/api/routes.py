@@ -64,6 +64,16 @@ async def active_markets(session: AsyncSession = Depends(get_db)) -> list[Active
     return [ActiveSymbolRead.model_validate(row) for row in rows]
 
 
+@router.get("/markets/all", response_model=list[ActiveSymbolRead])
+async def all_markets(session: AsyncSession = Depends(get_db)) -> list[ActiveSymbolRead]:
+    """返回全部 USDT 永续合约及最近一次 24h 行情，供仪表盘查看完整明细。"""
+    rows = (await session.execute(
+        select(Symbol)
+        .order_by(Symbol.quote_volume_24h.desc().nullslast(), Symbol.symbol.asc())
+    )).scalars().all()
+    return [ActiveSymbolRead.model_validate(row) for row in rows]
+
+
 @router.get("/signals", response_model=SignalPage)
 async def list_signals(
     symbol: str | None = None,
