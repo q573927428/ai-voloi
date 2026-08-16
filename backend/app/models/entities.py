@@ -91,6 +91,8 @@ class Signal(Base, TimestampMixin):
     newest_oi: Mapped[Decimal] = mapped_column(NUM)
     oi_change_absolute: Mapped[Decimal] = mapped_column(NUM)
     oi_change_percent: Mapped[Decimal] = mapped_column(NUM, index=True)
+    # 旧 Signal 使用“K线开盘至检测时”的口径，因此迁移后保持 NULL，避免伪造历史参数。
+    oi_lookback_minutes: Mapped[int | None] = mapped_column(Integer)
     oldest_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     newest_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_price: Mapped[Decimal] = mapped_column(NUM)

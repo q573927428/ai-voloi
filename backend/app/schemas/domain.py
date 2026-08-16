@@ -43,6 +43,7 @@ class ConfigValues(BaseModel):
     volume_ema_period: int = Field(default=12, ge=2, le=100)
     volume_multiplier: Decimal = Field(default=Decimal("1.5"), ge=Decimal("1"), le=Decimal("100"))
     min_progress_percent: Decimal = Field(default=Decimal("10"), ge=Decimal("0"), le=Decimal("100"))
+    oi_lookback_minutes: int = Field(default=15, ge=5, le=480)
     oi_change_threshold_percent: Decimal = Field(default=Decimal("0.05"), ge=Decimal("0"), le=Decimal("100"))
     scan_interval_minutes: int = Field(default=5, ge=1, le=60)
 
@@ -53,6 +54,7 @@ class ConfigUpdate(BaseModel):
     volume_ema_period: int | None = Field(default=None, ge=2, le=100)
     volume_multiplier: Decimal | None = Field(default=None, ge=1, le=100)
     min_progress_percent: Decimal | None = Field(default=None, ge=0, le=100)
+    oi_lookback_minutes: int | None = Field(default=None, ge=5, le=480)
     oi_change_threshold_percent: Decimal | None = Field(default=None, ge=0, le=100)
     scan_interval_minutes: int | None = Field(default=None, ge=1, le=60)
 
@@ -91,6 +93,7 @@ class SignalRead(BaseModel):
     newest_oi: Decimal
     oi_change_absolute: Decimal
     oi_change_percent: Decimal
+    oi_lookback_minutes: int | None
     oldest_timestamp: datetime
     newest_timestamp: datetime
     last_price: Decimal

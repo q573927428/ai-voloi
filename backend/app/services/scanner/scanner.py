@@ -2,10 +2,11 @@
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from time import perf_counter
 
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from app.models import OpenInterestSnapshot, ScannerRun, Signal, SignalFuturePerformance
@@ -46,6 +47,21 @@ class Scanner:
         self.session_factory = session_factory
         self.publish = publish
         self._lock = asyncio.Lock()
+
+    async def _existing_signal_keys(
+        self,
+        keys: set[tuple[str, str, datetime]],
+    ) -> set[tuple[str, str, datetime]]:
+        """查询已经产生 Signal 的 K 线，避免重复请求 OI 和重复入库。"""
+        if not keys:
+            return set()
+        async with self.session_factory() as session:
+            rows = await session.execute(
+                select(Signal.symbol, Signal.timeframe, Signal.open_time).where(
+                    tuple_(Signal.symbol, Signal.timeframe, Signal.open_time).in_(keys)
+                )
+            )
+        return {(symbol, timeframe, open_time) for symbol, timeframe, open_time in rows.all()}
 
     async def scan(self, symbols: set[str], tickers: dict[str, TickerData], config: ConfigValues) -> ScannerRun:
         """扫描活跃池并持久化审计记录、OI 快照与合格 Signal。"""
@@ -91,17 +107,27 @@ class Scanner:
                             candidates.append((symbol, timeframe, current, progress, ema, ratio, indicators))
 
             run.candidate_count = len(candidates)
+            candidate_keys = {
+                (symbol, timeframe, current.open_time)
+                for symbol, timeframe, current, *_ in candidates
+            }
+            existing_signal_keys = await self._existing_signal_keys(candidate_keys)
             signal_models: list[Signal] = []
             oi_rows: list[OpenInterestSnapshot] = []
             for symbol, timeframe, current, progress, ema, ratio, indicators in candidates:
+                signal_key = (symbol, timeframe, current.open_time)
+                # 同一根 K 线只在首次满足组合条件时生成一次 Signal。
+                if signal_key in existing_signal_keys:
+                    continue
                 try:
                     run.oi_request_count += 1
+                    oi_target_start = started - timedelta(minutes=config.oi_lookback_minutes)
                     points = await self.client.open_interest(
                         symbol,
                         OI_HISTORY_PERIOD,
-                        int(current.open_time.timestamp() * 1000),
+                        int(oi_target_start.timestamp() * 1000),
                     )
-                    matched = select_oi_range(points, current.open_time, started)
+                    matched = select_oi_range(points, oi_target_start, started)
                     if not matched:
                         continue
                     oldest, newest = matched
@@ -131,10 +157,12 @@ class Scanner:
                         ema50_slope_percent=indicators.ema50_slope_percent,
                         oldest_oi=oldest.open_interest, newest_oi=newest.open_interest,
                         oi_change_absolute=change, oi_change_percent=change_percent,
+                        oi_lookback_minutes=config.oi_lookback_minutes,
                         oldest_timestamp=oldest.timestamp, newest_timestamp=newest.timestamp,
                         last_price=ticker.last_price, price_change_percent_24h=ticker.price_change_percent,
                         quote_volume_24h=ticker.quote_volume, signal_type="VOLUME_OI_ANOMALY",
                     ))
+                    existing_signal_keys.add(signal_key)
                 except Exception as exc:
                     logger.exception("OI scan failed for %s %s", symbol, timeframe)
                     errors.append(f"{symbol}/{timeframe}: {exc}")

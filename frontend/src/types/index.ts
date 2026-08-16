@@ -57,6 +57,7 @@ export interface SignalSnapshot {
   newest_oi: string
   oi_change_absolute: string
   oi_change_percent: string
+  oi_lookback_minutes: number | null
   oldest_timestamp: string
   newest_timestamp: string
   last_price: string
@@ -116,6 +117,7 @@ export interface ScannerConfig {
   volume_ema_period: number
   volume_multiplier: number
   min_progress_percent: number
+  oi_lookback_minutes: number
   oi_change_threshold_percent: number
   scan_interval_minutes: number
 }

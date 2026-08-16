@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.models import Signal
 from app.schemas import ConfigValues, KlineData, OIPoint, TickerData
 from app.services.cache.kline_cache import KlineCache
 from app.services.scanner.scanner import OI_HISTORY_PERIOD, Scanner
@@ -39,6 +40,15 @@ class FakeSession:
     async def __aexit__(self, *args):
         return None
 
+    async def execute(self, statement):
+        """返回已持久化 Signal 的 K 线身份，模拟扫描器的批量去重查询。"""
+        identities = [
+            (row.symbol, row.timeframe, row.open_time)
+            for row in self.rows
+            if isinstance(row, Signal)
+        ]
+        return FakeResult(identities)
+
     def add_all(self, rows) -> None:
         self.rows.extend(rows)
 
@@ -52,6 +62,17 @@ class FakeSession:
         # SQLAlchemy 的 UUID default 通常在 flush 时填充，测试会话在此模拟该行为。
         if row.id is None:
             row.id = uuid4()
+
+
+class FakeResult:
+    """提供 SQLAlchemy Result 在去重查询中使用的最小接口。"""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    def all(self):
+        """返回查询结果行。"""
+        return self.rows
 
 
 class FakeSessionFactory:
@@ -168,9 +189,12 @@ async def test_signal_requires_both_volume_and_oi_and_is_published() -> None:
 
     run = await scanner.scan({"BTCUSDT"}, tickers, ConfigValues(timeframes=["30m"]))
 
-    assert client.calls == [
-        ("BTCUSDT", OI_HISTORY_PERIOD, int(start.timestamp() * 1000))
-    ]
+    assert len(client.calls) == 1
+    symbol, period, requested_start_ms = client.calls[0]
+    assert (symbol, period) == ("BTCUSDT", OI_HISTORY_PERIOD)
+    # OI 起点统一为检测时间前 15 分钟，而不是当前 30m K 线的开盘时间。
+    requested_start = datetime.fromtimestamp(requested_start_ms / 1000, timezone.utc)
+    assert now - timedelta(minutes=16) < requested_start < now - timedelta(minutes=14)
     assert run.candidate_count == 1
     assert run.signal_count == 1
     assert published[0].signal_type == "VOLUME_OI_ANOMALY"
@@ -179,3 +203,42 @@ async def test_signal_requires_both_volume_and_oi_and_is_published() -> None:
     assert published[0].rsi14 is not None
     assert published[0].adx14 is not None
     assert published[0].atr14 is not None
+    assert published[0].oi_lookback_minutes == 15
+
+
+@pytest.mark.asyncio
+async def test_same_kline_only_generates_one_signal() -> None:
+    """条件持续成立时，同一交易对、周期和开盘时间不能重复生成 Signal。"""
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(minutes=10)
+    cache = KlineCache()
+    history = [
+        make_kline(start - timedelta(minutes=30 * index), "100", True, "30m", 30)
+        for index in range(60, 0, -1)
+    ]
+    await cache.initialize(
+        "BTCUSDT",
+        "30m",
+        history + [make_kline(start, "200", False, "30m", 30)],
+    )
+    client = FakeBinanceClient(start)
+    session_factory = FakeSessionFactory()
+
+    async def publish(signal) -> None:
+        """测试中无需处理推送。"""
+
+    scanner = Scanner(cache, client, session_factory, publish)
+    tickers = {
+        "BTCUSDT": TickerData(
+            symbol="BTCUSDT", last_price=101, price_change_percent=2, quote_volume=20_000_000
+        )
+    }
+
+    first = await scanner.scan({"BTCUSDT"}, tickers, ConfigValues(timeframes=["30m"]))
+    second = await scanner.scan({"BTCUSDT"}, tickers, ConfigValues(timeframes=["30m"]))
+
+    assert first.signal_count == 1
+    assert second.candidate_count == 1
+    assert second.oi_request_count == 0
+    assert second.signal_count == 0
+    assert len(client.calls) == 1

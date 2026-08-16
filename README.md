@@ -38,9 +38,9 @@ docker-compose.yml          PostgreSQL、后端、前端编排
 3. `estimatedVolume = currentVolume / progress`。
 4. 用最近 `volume_ema_period` 根已收盘 K 线计算 EMA，当前 K 线不进入基准。
 5. `volumeRatio = estimatedVolume / volumeEMA`；达到阈值后才请求 OI。
-6. 使用固定 `5m` 粒度查询 OI 时点序列，按时间戳选择最接近当前 K 线开盘的有效 OI，以及不晚于扫描时刻的最新 OI；Signal 的 K 线周期保持不变。
+6. 使用固定 `5m` 粒度查询 OI 时点序列，并统一比较最近 `oi_lookback_minutes`（默认 15 分钟）的 OI；该观察窗口不随 Signal 的 K 线周期扩大。
 7. `oiChangePercent = (newestOI - oldestOI) / oldestOI × 100`。默认阈值 `0.05` 表示 `0.05%`。
-8. 两项条件同时满足时保存 `VOLUME_OI_ANOMALY` 完整快照，并推送前端。
+8. 两项条件同时满足时保存 `VOLUME_OI_ANOMALY` 完整快照，并推送前端；同一 `symbol + timeframe + open_time` 只生成一次。
 
 每个 Signal 还会保存对应周期最近完整 K 线计算出的价格指标：`EMA14`、`EMA50`、Wilder `RSI14`、`ATR14`、`ADX14`，以及相邻观察点的 `ADX` 斜率、`EMA14` 百分比斜率和 `EMA50` 百分比斜率。当前未完成 K 线不参与这些指标，避免后续回测出现指标重绘；EMA 斜率单位为 `%/根`，ADX 斜率单位为 `点/根`。
 
@@ -97,6 +97,7 @@ FastAPI 自动文档位于 `/docs`。
 | `volume_ema_period` | `12` | 完整 K 线 EMA 周期 |
 | `volume_multiplier` | `1.5` | 成交量异常倍数 |
 | `min_progress_percent` | `10` | 最小 K 线进度百分比 |
+| `oi_lookback_minutes` | `15` | 各 K 线周期统一使用的 OI 观察窗口（分钟） |
 | `oi_change_threshold_percent` | `0.05` | OI 变化百分比阈值 |
 | `scan_interval_minutes` | `5` | 边界扫描间隔 |
 
