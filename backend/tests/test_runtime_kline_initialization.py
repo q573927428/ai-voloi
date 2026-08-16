@@ -8,7 +8,7 @@ import pytest
 
 from app.schemas import KlineData
 from app.services.cache.kline_cache import KlineCache
-from app.services.runtime import KLINE_INCREMENTAL_LIMIT, MonitorRuntime
+from app.services.runtime import KLINE_INCREMENTAL_LIMIT, MonitorRuntime, has_fresh_closed_history
 
 
 class FakeKlineClient:
@@ -68,10 +68,41 @@ def make_runtime(stored: list[KlineData], batches: list[list[KlineData]]):
     return runtime, persisted
 
 
+def current_timeframe_open(now: datetime, minutes: int) -> datetime:
+    """按 UTC Unix 边界计算测试所需的当前周期开盘时间。"""
+    seconds = minutes * 60
+    timestamp = int(now.timestamp()) // seconds * seconds
+    return datetime.fromtimestamp(timestamp, timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_fresh_stored_history_skips_incremental_request() -> None:
+    """数据库已覆盖至当前周期起点时，重启不得重复请求 Binance K 线。"""
+    current_open = current_timeframe_open(datetime.now(timezone.utc), 15)
+    stored = [make_kline(current_open - timedelta(minutes=15), "10")]
+    runtime, persisted = make_runtime(stored, [])
+
+    await runtime._initialize_symbol_timeframe("BTCUSDT", "15m")
+
+    assert runtime.client.calls == []
+    cached_current, cached_closed = await runtime.cache.snapshot("BTCUSDT", "15m")
+    assert cached_closed == stored
+    assert cached_current is None
+    assert persisted == []
+
+
+def test_unknown_timeframe_cannot_skip_incremental_request() -> None:
+    """无法识别的周期必须保守执行增量校验。"""
+    now = datetime.now(timezone.utc)
+
+    assert not has_fresh_closed_history(now, "unsupported", now)
+
+
 @pytest.mark.asyncio
 async def test_existing_history_uses_small_incremental_request_and_repairs_overlap() -> None:
     """数据库有历史时应从末根开始少量补齐，并用 Binance 值修正重叠记录。"""
-    start = datetime(2026, 8, 16, tzinfo=timezone.utc)
+    current_open = current_timeframe_open(datetime.now(timezone.utc), 15)
+    start = current_open - timedelta(minutes=45)
     stored = [make_kline(start, "10"), make_kline(start + timedelta(minutes=15), "20")]
     repaired = make_kline(start + timedelta(minutes=15), "21")
     current = make_kline(start + timedelta(minutes=30), "5", closed=False)

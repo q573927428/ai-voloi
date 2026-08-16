@@ -24,6 +24,31 @@ logger = logging.getLogger(__name__)
 # Binance 在周期边界推送新 K 线通常会有极短延迟，给 WebSocket 事件留出落缓存时间。
 SCAN_BOUNDARY_GRACE_SECONDS = 2
 KLINE_INCREMENTAL_LIMIT = 20
+TIMEFRAME_SECONDS = {
+    "15m": 15 * 60,
+    "30m": 30 * 60,
+    "1h": 60 * 60,
+    "4h": 4 * 60 * 60,
+    "1d": 24 * 60 * 60,
+}
+
+
+def has_fresh_closed_history(
+    latest_close_time: datetime,
+    timeframe: str,
+    now: datetime | None = None,
+) -> bool:
+    """判断数据库完整 K 线是否已连续覆盖到当前周期起点。"""
+    timeframe_seconds = TIMEFRAME_SECONDS.get(timeframe)
+    if timeframe_seconds is None:
+        # 未知周期无法可靠计算 Binance 边界，保守回退到 REST 增量校验。
+        return False
+    current_time = now or datetime.now(timezone.utc)
+    current_open_timestamp = (
+        int(current_time.timestamp()) // timeframe_seconds * timeframe_seconds
+    )
+    current_open_time = datetime.fromtimestamp(current_open_timestamp, timezone.utc)
+    return latest_close_time >= current_open_time
 
 
 class MonitorRuntime:
@@ -177,6 +202,9 @@ class MonitorRuntime:
             return
 
         await self.cache.initialize(symbol, timeframe, stored)
+        if has_fresh_closed_history(stored[-1].close_time, timeframe):
+            # 正常重启时数据库末根完整 K 线已与当前 K 线相邻，当前 K 线交给 WebSocket 接管即可。
+            return
         start_ms = int(stored[-1].open_time.timestamp() * 1000)
         request_limit = min(KLINE_INCREMENTAL_LIMIT, self.settings.kline_history_limit)
 
