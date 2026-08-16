@@ -17,12 +17,14 @@ import { api, errorMessage } from '../api/client'
 import type { RealtimeKlineMessage, SignalChartCandle, SignalChartData } from '../types'
 
 /** 图表定位所需的 Signal 标识与可见标题。 */
-const props = defineProps<{ signalId: string; symbol: string; timeframe: string; signalPrice: string }>()
+const props = defineProps<{ signalId: string; symbol: string; timeframe: string }>()
 const container = ref<HTMLDivElement | null>(null)
 const loading = ref(true)
 const error = ref('')
 const ema14 = ref('—')
 const ema50 = ref('—')
+const latestCandle = ref<SignalChartCandle | null>(null)
+const latestPriceDirection = ref<'up' | 'down' | 'flat'>('flat')
 const mode = ref<'snapshot' | 'realtime'>('realtime')
 const liveConnected = ref(false)
 const DEFAULT_VISIBLE_CANDLES = 300
@@ -76,10 +78,39 @@ function updateLegend(candle?: SignalChartCandle) {
   ema50.value = candle?.ema50 == null ? '—' : Number(candle.ema50).toLocaleString('zh-CN', { maximumFractionDigits: 8 })
 }
 
-/** 根据价格数量级保留约三位有效数字，避免低价币被固定两位小数截断。 */
+/** 按图表当前动态精度格式化行情价格。 */
+function formatMarketPrice(value?: string): string {
+  if (value == null) return '—'
+  const number = Number(value)
+  return Number.isFinite(number)
+    ? number.toLocaleString('zh-CN', {
+        minimumFractionDigits: currentPricePrecision ?? 2,
+        maximumFractionDigits: currentPricePrecision ?? 2,
+      })
+    : '—'
+}
+
+/** 紧凑格式化本根 K 线成交量。 */
+function formatMarketVolume(value?: string): string {
+  if (value == null) return '—'
+  const number = Number(value)
+  return Number.isFinite(number)
+    ? new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 2 }).format(number)
+    : '—'
+}
+
+/** 计算当前 K 线相对开盘价的涨跌幅。 */
+function candleChangePercent(candle: SignalChartCandle | null): number {
+  if (!candle || Number(candle.open) === 0) return 0
+  return (Number(candle.close) - Number(candle.open)) / Number(candle.open) * 100
+}
+
+/** 根据价格数量级动态调整精度；个位价格至少保留三位小数，避免行情细微变化被隐藏。 */
 function resolvePricePrecision(price: number): number {
   if (!Number.isFinite(price) || price === 0) return 2
-  return Math.min(12, Math.max(2, 2 - Math.floor(Math.log10(Math.abs(price)))))
+  const absolutePrice = Math.abs(price)
+  const minimumPrecision = absolutePrice < 10 ? 3 : 2
+  return Math.min(12, Math.max(minimumPrecision, 2 - Math.floor(Math.log10(absolutePrice))))
 }
 
 /** 为蜡烛和双 EMA 同步应用动态价格精度。 */
@@ -97,6 +128,8 @@ function applyPricePrecision(price: number) {
 function setChartCandles(items: SignalChartCandle[]) {
   const latest = items[items.length - 1]
   if (latest) applyPricePrecision(Number(latest.close))
+  latestPriceDirection.value = 'flat'
+  latestCandle.value = latest ?? null
   candleSeries?.setData(items.map((item) => ({
     time: item.time as UTCTimestamp,
     open: Number(item.open), high: Number(item.high), low: Number(item.low), close: Number(item.close),
@@ -127,7 +160,12 @@ function setChartCandles(items: SignalChartCandle[]) {
 function updateRealtimeCandle(item: SignalChartCandle) {
   const isNewCandle = lastRealtimeCandleTime !== item.time
   const time = item.time as UTCTimestamp
+  const previousPrice = Number(latestCandle.value?.close)
+  const currentPrice = Number(item.close)
+  if (Number.isFinite(previousPrice) && currentPrice > previousPrice) latestPriceDirection.value = 'up'
+  else if (Number.isFinite(previousPrice) && currentPrice < previousPrice) latestPriceDirection.value = 'down'
   applyPricePrecision(Number(item.close))
+  latestCandle.value = item
   candleSeries?.update({
     time, open: Number(item.open), high: Number(item.high), low: Number(item.low), close: Number(item.close),
   })
@@ -229,10 +267,11 @@ async function renderChart() {
     ema50Series = chart.addSeries(LineSeries, { color: '#d97706', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'EMA50' })
     volumeSeries = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceScaleId: '', priceLineVisible: false, lastValueVisible: false })
     volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
+    const signalCandle = data.candles[data.candles.length - 1]
     createSeriesMarkers(candleSeries, [{
       time: data.signal_open_time as UTCTimestamp,
       // 实时模式中的完整 K 线可能继续变化，Signal 必须固定在检测价格而不是最终最高价。
-      position: 'atPriceTop', price: Number(props.signalPrice),
+      position: 'atPriceTop', price: Number(signalCandle.close),
       shape: 'arrowDown', color: '#d39b24', text: 'Signal',
     }])
     setChartCandles(data.candles)
@@ -271,7 +310,18 @@ onUnmounted(() => {
 <template>
   <section class="chart-band">
     <div class="chart-head">
-      <div class="chart-copy"><h2>{{ symbol }} · {{ timeframe }}</h2><span>{{ mode === 'realtime' ? '实时行情' : '检测时刻快照' }} · UTC+8</span></div>
+      <div class="chart-primary">
+        <div class="chart-copy"><h2>{{ symbol }} · {{ timeframe }}</h2><span>{{ mode === 'realtime' ? '实时行情' : '检测时刻快照' }} · UTC+8</span></div>
+        <div v-if="latestCandle" class="market-strip">
+          <div class="market-item latest"><span>最新价格</span><strong :class="latestPriceDirection">{{ formatMarketPrice(latestCandle.close) }}</strong></div>
+          <div class="market-item"><span>变化</span><strong :class="candleChangePercent(latestCandle) >= 0 ? 'up' : 'down'">{{ candleChangePercent(latestCandle) >= 0 ? '+' : '' }}{{ candleChangePercent(latestCandle).toFixed(2) }}%</strong></div>
+          <div class="market-item"><span>开</span><strong>{{ formatMarketPrice(latestCandle.open) }}</strong></div>
+          <div class="market-item"><span>高</span><strong>{{ formatMarketPrice(latestCandle.high) }}</strong></div>
+          <div class="market-item"><span>低</span><strong>{{ formatMarketPrice(latestCandle.low) }}</strong></div>
+          <div class="market-item"><span>收</span><strong>{{ formatMarketPrice(latestCandle.close) }}</strong></div>
+          <div class="market-item"><span>量</span><strong>{{ formatMarketVolume(latestCandle.volume) }}</strong></div>
+        </div>
+      </div>
       <div class="chart-tools">
         <div class="chart-legend"><span><i class="ema14" />EMA14 {{ ema14 }}</span><span><i class="ema50" />EMA50 {{ ema50 }}</span></div>
         <div class="mode-control">
@@ -288,10 +338,19 @@ onUnmounted(() => {
 
 <style scoped>
 .chart-band { position: relative; margin-bottom: 24px; border: 1px solid #dfe4e9; border-radius: 7px; overflow: hidden; background: #fff; }
-.chart-head { min-height: 66px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 18px; border-bottom: 1px solid #e5e9ed; }
+.chart-head { min-height: 66px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; padding: 12px 18px; border-bottom: 1px solid #e5e9ed; }
 .chart-head h2 { margin: 0 0 4px; font-size: 16px; letter-spacing: 0; }
 .chart-copy > span { color: #7d8997; font-size: 12px; }
-.chart-tools { display: flex; align-items: center; gap: 22px; }
+.chart-primary { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; }
+.chart-copy { flex: 0 0 auto; }
+.chart-tools { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 22px; }
+.market-strip { display: flex; flex-wrap: wrap; gap: 8px 16px; font-variant-numeric: tabular-nums; }
+.market-item { display: grid; gap: 2px; white-space: nowrap; }
+.market-item span { color: #8a95a2; font-size: 13px; }
+.market-item strong { color: #303b48; font-size: 12px; font-weight: 600; }
+.market-item.latest strong { font-size: 14px; transition: color .15s ease; }
+.market-item strong.up { color: #14805e; }
+.market-item strong.down { color: #c54d4a; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 18px; font-variant-numeric: tabular-nums; }
 .chart-legend span { color: #4d5967; font-size: 12px; }
 .chart-legend i { display: inline-block; width: 16px; height: 3px; margin-right: 7px; vertical-align: middle; }
@@ -307,7 +366,9 @@ onUnmounted(() => {
 .chart-credit { position: absolute; right: 12px; bottom: 7px; z-index: 2; color: #7d8997; font-size: 10px; text-decoration: none; }
 @media (max-width: 620px) {
   .chart-head { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .chart-primary { width: 100%; align-items: flex-start; flex-direction: column; gap: 8px; }
   .chart-tools { width: 100%; align-items: flex-start; flex-direction: column; gap: 8px; }
+  .market-strip { gap: 8px 14px; }
   .mode-control { width: 100%; justify-content: space-between; }
   .chart-canvas { height: 430px; }
   .chart-legend { gap: 10px; }

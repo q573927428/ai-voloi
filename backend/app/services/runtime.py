@@ -21,6 +21,9 @@ from app.services.websocket.manager import BinanceWebSocketManager
 
 logger = logging.getLogger(__name__)
 
+# Binance 在周期边界推送新 K 线通常会有极短延迟，给 WebSocket 事件留出落缓存时间。
+SCAN_BOUNDARY_GRACE_SECONDS = 2
+
 
 class MonitorRuntime:
     """监控系统的进程级协调器。
@@ -238,7 +241,9 @@ class MonitorRuntime:
             else:
                 boundary = boundary.replace(minute=next_minute)
             try:
-                await asyncio.wait_for(self._stop.wait(), timeout=max(0, (boundary - now).total_seconds()))
+                # 扫描不能抢在新 K 线事件之前，否则会把上一根已收盘 K 线误记为 100% 进度。
+                timeout = max(0, (boundary - now).total_seconds() + SCAN_BOUNDARY_GRACE_SECONDS)
+                await asyncio.wait_for(self._stop.wait(), timeout=timeout)
                 continue
             except asyncio.TimeoutError:
                 pass
