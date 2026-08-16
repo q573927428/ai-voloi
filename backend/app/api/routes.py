@@ -14,12 +14,14 @@ from app.schemas import (
     ConfigUpdate,
     ConfigValues,
     DashboardStats,
+    RealtimeChartData,
     SignalChartCandle,
     SignalChartData,
     SignalPage,
     SignalRead,
 )
 from app.services.cache.technical_indicators import ema_series
+from app.services.chart import build_chart_candles
 
 router = APIRouter()
 
@@ -150,6 +152,41 @@ async def signal_chart(
     )
 
 
+@router.get("/markets/{symbol}/{timeframe}/chart", response_model=RealtimeChartData)
+async def realtime_chart(
+    symbol: str,
+    timeframe: str,
+    request: Request,
+    history_limit: int = Query(1000, ge=50, le=1000),
+    session: AsyncSession = Depends(get_db),
+) -> RealtimeChartData:
+    """返回指定市场的最新历史窗口和当前未收盘 K 线，作为实时模式初始状态。"""
+    normalized_symbol = symbol.upper()
+    runtime = request.app.state.runtime
+    if timeframe not in runtime.config.timeframes:
+        raise HTTPException(status_code=404, detail="Unsupported timeframe")
+    rows = (await session.execute(
+        select(Kline)
+        .where(
+            Kline.symbol == normalized_symbol,
+            Kline.timeframe == timeframe,
+            Kline.is_closed.is_(True),
+        )
+        .order_by(Kline.open_time.desc())
+        .limit(history_limit)
+    )).scalars().all()
+    rows = list(reversed(rows))
+    current, _ = await runtime.cache.snapshot(normalized_symbol, timeframe)
+    visible = [*rows, *([current] if current and (not rows or current.open_time > rows[-1].open_time) else [])]
+    if not visible:
+        raise HTTPException(status_code=404, detail="Market Kline data not found")
+    return RealtimeChartData(
+        symbol=normalized_symbol,
+        timeframe=timeframe,
+        candles=build_chart_candles(visible),
+    )
+
+
 @router.get("/config", response_model=ConfigValues)
 async def get_config(session: AsyncSession = Depends(get_db)) -> ConfigValues:
     """读取当前扫描配置。"""
@@ -192,3 +229,21 @@ async def signal_stream(websocket: WebSocket) -> None:
             await websocket.receive_text()
     except WebSocketDisconnect:
         await broadcaster.disconnect(websocket)
+
+
+@router.websocket("/ws/klines/{symbol}/{timeframe}")
+async def kline_stream(websocket: WebSocket, symbol: str, timeframe: str) -> None:
+    """将既有 Binance 订阅收到的 K 线增量转发给对应实时图表。"""
+    normalized_symbol = symbol.upper()
+    runtime = websocket.app.state.runtime
+    broadcaster = websocket.app.state.kline_broadcaster
+    if normalized_symbol not in runtime.active_symbols or timeframe not in runtime.config.timeframes:
+        await websocket.accept()
+        await websocket.close(code=1008, reason="Market is not active")
+        return
+    await broadcaster.connect(websocket, normalized_symbol, timeframe)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        await broadcaster.disconnect(websocket, normalized_symbol, timeframe)

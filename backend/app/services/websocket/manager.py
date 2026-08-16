@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from time import monotonic
 
 import websockets
 
@@ -21,6 +22,12 @@ class BinanceWebSocketManager:
         self.status = "disconnected"
         self._tasks: list[asyncio.Task] = []
         self._stop = asyncio.Event()
+        self._last_event_at: dict[tuple[str, str], float] = {}
+
+    def is_stale(self, symbol: str, timeframe: str, threshold_seconds: float = 3) -> bool:
+        """判断指定市场近期是否缺少 Binance 推送，供实时图表启用 REST 兜底。"""
+        last_event = self._last_event_at.get((symbol, timeframe))
+        return last_event is None or monotonic() - last_event > threshold_seconds
 
     async def start(self, symbols: set[str], timeframes: list[str]) -> None:
         """根据最新活跃池重建全部组合流订阅。"""
@@ -59,6 +66,7 @@ class BinanceWebSocketManager:
                         if event.get("e") != "kline":
                             continue
                         k = event["k"]
+                        self._last_event_at[(k["s"], k["i"])] = monotonic()
                         await self.on_kline(KlineData(
                             symbol=k["s"], timeframe=k["i"], open_time=k["t"], close_time=k["T"] + 1,
                             open=k["o"], high=k["h"], low=k["l"], close=k["c"], volume=k["v"],

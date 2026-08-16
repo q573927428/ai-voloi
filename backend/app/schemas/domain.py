@@ -128,6 +128,13 @@ class SignalChartData(BaseModel):
     candles: list[SignalChartCandle]
 
 
+class RealtimeChartData(BaseModel):
+    """当前市场图表窗口，包含最新完整 K 线和未收盘 K 线。"""
+    symbol: str
+    timeframe: str
+    candles: list[SignalChartCandle]
+
+
 class DashboardStats(BaseModel):
     """前端运行概览的聚合指标。"""
     total_symbols: int

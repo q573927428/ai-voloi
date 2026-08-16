@@ -74,6 +74,19 @@ export interface SignalChartData {
   candles: SignalChartCandle[]
 }
 
+/** 实时模式使用的最新市场图表窗口。 */
+export interface RealtimeChartData {
+  symbol: string
+  timeframe: string
+  candles: SignalChartCandle[]
+}
+
+/** 实时 K 线 WebSocket 的增量消息。 */
+export interface RealtimeKlineMessage {
+  type: 'kline'
+  data: SignalChartCandle
+}
+
 /** Signal 分页响应。 */
 export interface SignalPage {
   items: SignalSnapshot[]

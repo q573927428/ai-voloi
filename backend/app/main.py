@@ -10,7 +10,7 @@ from app.api.routes import router
 from app.core.config import get_settings
 from app.core.database import SessionLocal, engine
 from app.models import Base
-from app.services.broadcast import SignalBroadcaster
+from app.services.broadcast import KlineBroadcaster, SignalBroadcaster
 from app.services.runtime import MonitorRuntime
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -23,8 +23,10 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     broadcaster = SignalBroadcaster()
-    runtime = MonitorRuntime(settings, SessionLocal, broadcaster)
+    kline_broadcaster = KlineBroadcaster()
+    runtime = MonitorRuntime(settings, SessionLocal, broadcaster, kline_broadcaster)
     app.state.broadcaster = broadcaster
+    app.state.kline_broadcaster = kline_broadcaster
     app.state.runtime = runtime
     if settings.auto_start_monitor:
         await runtime.start()

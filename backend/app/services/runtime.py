@@ -13,6 +13,7 @@ from app.models import Kline, Symbol
 from app.schemas import ConfigValues, KlineData, TickerData
 from app.services.binance.client import BinanceClient
 from app.services.cache.kline_cache import KlineCache
+from app.services.chart import build_chart_candles
 from app.services.config_service import ConfigService
 from app.services.performance.tracker import PerformanceTracker
 from app.services.scanner.scanner import Scanner
@@ -32,6 +33,7 @@ class MonitorRuntime:
         settings: Settings,
         session_factory: async_sessionmaker[AsyncSession],
         broadcaster,
+        kline_broadcaster,
     ):
         self.settings = settings
         self.session_factory = session_factory
@@ -39,6 +41,7 @@ class MonitorRuntime:
         self.cache = KlineCache(settings.kline_history_limit)
         self.config_service = ConfigService()
         self.broadcaster = broadcaster
+        self.kline_broadcaster = kline_broadcaster
         self.scanner = Scanner(self.cache, self.client, session_factory, broadcaster.publish)
         self.performance = PerformanceTracker(self.cache, session_factory)
         self.websocket = BinanceWebSocketManager(settings, self.on_kline)
@@ -56,6 +59,7 @@ class MonitorRuntime:
             asyncio.create_task(self._bootstrap_loop(), name="monitor-bootstrap"),
             asyncio.create_task(self._scan_loop(), name="monitor-scanner"),
             asyncio.create_task(self._performance_loop(), name="performance-tracker"),
+            asyncio.create_task(self._realtime_chart_poll_loop(), name="realtime-chart-fallback"),
         ]
 
     async def stop(self) -> None:
@@ -174,6 +178,14 @@ class MonitorRuntime:
         closed_now = await self.cache.update(kline)
         if closed_now:
             await self._persist_closed_klines([kline])
+        if await self.kline_broadcaster.has_subscribers(kline.symbol, kline.timeframe):
+            # 仅在详情页订阅存在时计算逐根 EMA，避免给全市场高频 K 线链路增加固定开销。
+            current, closed = await self.cache.snapshot(kline.symbol, kline.timeframe)
+            visible = [*closed, *([current] if current else [])]
+            candles = build_chart_candles(visible)
+            if candles and candles[-1].ema14 is not None and candles[-1].ema50 is not None:
+                # 启动早期历史缓存尚未装满时，不用空 EMA 覆盖前端已有完整窗口。
+                await self.kline_broadcaster.publish(kline.symbol, kline.timeframe, candles[-1])
 
     async def _persist_closed_klines(self, klines: list[KlineData]) -> None:
         """按唯一键保存完整 K 线，重复的 WebSocket 收盘事件不会制造脏数据。"""
@@ -193,6 +205,26 @@ class MonitorRuntime:
         async with self.session_factory() as session:
             await session.execute(statement)
             await session.commit()
+
+    async def _realtime_chart_poll_loop(self) -> None:
+        """仅在上游推送停滞时，为正在查看的市场按需补充最新 K 线。"""
+        while not self._stop.is_set():
+            try:
+                keys = await self.kline_broadcaster.subscription_keys()
+                stale_keys = [key for key in keys if self.websocket.is_stale(*key)]
+                for symbol, timeframe in stale_keys:
+                    # limit=2 的权重最低，且只有存在前端订阅并确认断流时才会请求。
+                    klines = await self.client.klines(symbol, timeframe, 2)
+                    if klines:
+                        await self.on_kline(klines[-1])
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Realtime chart fallback polling failed")
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=2)
+            except asyncio.TimeoutError:
+                pass
 
     async def _scan_loop(self) -> None:
         """根据 UTC 服务器时间对齐下一个 N 分钟边界执行扫描。"""

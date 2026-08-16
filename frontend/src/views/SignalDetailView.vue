@@ -30,7 +30,13 @@ onMounted(load)
     <el-button text :icon="ArrowLeft" @click="router.back()">返回</el-button>
     <el-tag v-if="signal" type="warning" effect="plain">{{ signal.signal_type }}</el-tag>
   </div>
-  <SignalTradingViewChart v-if="signal" :signal-id="signal.id" :symbol="signal.symbol" :timeframe="signal.timeframe" />
+  <SignalTradingViewChart
+    v-if="signal"
+    :signal-id="signal.id"
+    :symbol="signal.symbol"
+    :timeframe="signal.timeframe"
+    :signal-price="signal.current_price"
+  />
   <div v-if="signal" class="detail-grid" v-loading="loading">
     <section class="detail-section"><h2>K 线快照 · {{ signal.symbol }} / {{ signal.timeframe }}</h2><div class="kv"><span>检测时间</span><strong>{{ dt(signal.detected_at) }}</strong></div><div class="kv"><span>K 线区间</span><strong>{{ dt(signal.open_time) }} - {{ dt(signal.close_time) }}</strong></div><div class="kv"><span>OHLC</span><strong>{{ n(signal.open) }} / {{ n(signal.high) }} / {{ n(signal.low) }} / {{ n(signal.current_price) }}</strong></div><div class="kv"><span>形成进度</span><strong>{{ Number(signal.progress_percent).toFixed(2) }}%</strong></div><div class="kv"><span>Quote Volume</span><strong>{{ n(signal.current_quote_volume) }}</strong></div></section>
     <section class="detail-section"><h2>成交量异常</h2><div class="kv"><span>当前成交量</span><strong>{{ n(signal.current_volume) }}</strong></div><div class="kv"><span>预计完整成交量</span><strong>{{ n(signal.estimated_volume) }}</strong></div><div class="kv"><span>Volume EMA{{ signal.volume_ema_period }}</span><strong>{{ n(signal.volume_ema) }}</strong></div><div class="kv"><span>触发阈值</span><strong>{{ n(signal.volume_multiplier) }}x</strong></div><div class="kv"><span>Volume Ratio</span><strong class="positive">{{ Number(signal.volume_ratio).toFixed(3) }}x</strong></div></section>

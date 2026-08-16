@@ -1,6 +1,6 @@
 // ==================== 后端 API 客户端 ====================
 import axios from 'axios'
-import type { DashboardStats, ScannerConfig, SignalChartData, SignalPage, SignalQuery, SignalSnapshot } from '../types'
+import type { DashboardStats, RealtimeChartData, ScannerConfig, SignalChartData, SignalPage, SignalQuery, SignalSnapshot } from '../types'
 
 const client = axios.create({ baseURL: '/api', timeout: 15000 })
 
@@ -9,6 +9,9 @@ export const api = {
   signals: (params: SignalQuery) => client.get<SignalPage>('/signals', { params }).then(({ data }) => data),
   signal: (id: string) => client.get<SignalSnapshot>(`/signals/${id}`).then(({ data }) => data),
   signalChart: (id: string) => client.get<SignalChartData>(`/signals/${id}/chart`).then(({ data }) => data),
+  realtimeChart: (symbol: string, timeframe: string) => client
+    .get<RealtimeChartData>(`/markets/${symbol}/${timeframe}/chart`)
+    .then(({ data }) => data),
   config: () => client.get<ScannerConfig>('/config').then(({ data }) => data),
   updateConfig: (payload: Partial<ScannerConfig>) => client.patch<ScannerConfig>('/config', payload).then(({ data }) => data),
   runScanner: () => client.post('/scanner/run').then(({ data }) => data),
