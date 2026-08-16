@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Binance 在周期边界推送新 K 线通常会有极短延迟，给 WebSocket 事件留出落缓存时间。
 SCAN_BOUNDARY_GRACE_SECONDS = 2
+KLINE_INCREMENTAL_LIMIT = 20
 
 
 class MonitorRuntime:
@@ -145,7 +146,7 @@ class MonitorRuntime:
             await session.commit()
 
     async def _initialize_klines(self, symbols: set[str]) -> None:
-        """通过固定数量 worker 初始化历史数据，防止瞬间创建大量 REST 请求。"""
+        """数据库优先恢复 K 线缓存，仅对缺失或过期部分发起 REST 请求。"""
         queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
         for symbol in symbols:
             for timeframe in self.config.timeframes:
@@ -155,9 +156,7 @@ class MonitorRuntime:
             while not queue.empty():
                 symbol, timeframe = await queue.get()
                 try:
-                    klines = await self.client.klines(symbol, timeframe, self.settings.kline_history_limit)
-                    await self.cache.initialize(symbol, timeframe, klines)
-                    await self._persist_closed_klines(klines)
+                    await self._initialize_symbol_timeframe(symbol, timeframe)
                 except Exception:
                     logger.exception("Kline initialization failed for %s %s", symbol, timeframe)
                 finally:
@@ -166,6 +165,70 @@ class MonitorRuntime:
         workers = [asyncio.create_task(worker()) for _ in range(self.settings.rest_concurrency)]
         await queue.join()
         await asyncio.gather(*workers)
+
+    async def _initialize_symbol_timeframe(self, symbol: str, timeframe: str) -> None:
+        """从数据库恢复单个市场周期，并向 Binance 增量补齐或首次全量初始化。"""
+        stored = await self._load_stored_klines(symbol, timeframe)
+        if not stored:
+            # 数据库没有任何历史时才承担 1000 根 K 线的高权重初始化请求。
+            klines = await self.client.klines(symbol, timeframe, self.settings.kline_history_limit)
+            await self.cache.initialize(symbol, timeframe, klines)
+            await self._persist_closed_klines(klines)
+            return
+
+        await self.cache.initialize(symbol, timeframe, stored)
+        start_ms = int(stored[-1].open_time.timestamp() * 1000)
+        request_limit = min(KLINE_INCREMENTAL_LIMIT, self.settings.kline_history_limit)
+
+        while True:
+            # 包含数据库最后一根 K 线，以便 Binance 最终值可以修正本地重叠记录。
+            klines = await self.client.klines(symbol, timeframe, request_limit, start_ms=start_ms)
+            if not klines:
+                return
+            for item in klines:
+                await self.cache.update(item)
+            await self._persist_closed_klines(klines)
+
+            latest = klines[-1]
+            if not latest.is_closed or len(klines) < request_limit:
+                return
+            next_start_ms = int(latest.close_time.timestamp() * 1000)
+            if next_start_ms <= start_ms:
+                logger.warning("Kline incremental cursor did not advance for %s %s", symbol, timeframe)
+                return
+            start_ms = next_start_ms
+            # 常见重启只请求 20 根；确认存在较大缺口后扩大批次，避免逐小页追赶。
+            request_limit = self.settings.kline_history_limit
+
+    async def _load_stored_klines(self, symbol: str, timeframe: str) -> list[KlineData]:
+        """读取数据库中最近的完整 K 线，并转换为内存缓存使用的领域结构。"""
+        async with self.session_factory() as session:
+            rows = (await session.execute(
+                select(Kline)
+                .where(
+                    Kline.symbol == symbol,
+                    Kline.timeframe == timeframe,
+                    Kline.is_closed.is_(True),
+                )
+                .order_by(Kline.open_time.desc())
+                .limit(self.settings.kline_history_limit)
+            )).scalars().all()
+        return [
+            KlineData(
+                symbol=row.symbol,
+                timeframe=row.timeframe,
+                open_time=row.open_time,
+                close_time=row.close_time,
+                open=row.open,
+                high=row.high,
+                low=row.low,
+                close=row.close,
+                volume=row.volume,
+                quote_volume=row.quote_volume,
+                is_closed=row.is_closed,
+            )
+            for row in reversed(rows)
+        ]
 
     async def on_kline(self, kline: KlineData) -> None:
         """接收实时 K 线，并在发现收盘 K 线缺口时使用 REST 补齐。"""
@@ -189,6 +252,19 @@ class MonitorRuntime:
             if candles and candles[-1].ema14 is not None and candles[-1].ema50 is not None:
                 # 启动早期历史缓存尚未装满时，不用空 EMA 覆盖前端已有完整窗口。
                 await self.kline_broadcaster.publish(kline.symbol, kline.timeframe, candles[-1])
+
+    async def repair_market_klines(self, symbol: str, timeframe: str, limit: int = 20) -> None:
+        """按时间顺序合并最近 K 线，补齐断流期间的完整 K 线并刷新当前 K 线。"""
+        klines = await self.client.klines(symbol, timeframe, limit)
+        _, closed = await self.cache.snapshot(symbol, timeframe)
+        latest_closed_open = closed[-1].open_time if closed else None
+        relevant = (
+            item for item in klines
+            if latest_closed_open is None or item.open_time >= latest_closed_open
+        )
+        for item in sorted(relevant, key=lambda value: value.open_time):
+            # 必须处理完整批次，不能只更新最后一根，否则倒数第二根已收盘 K 线会形成图表缺口。
+            await self.on_kline(item)
 
     async def _persist_closed_klines(self, klines: list[KlineData]) -> None:
         """按唯一键保存完整 K 线，重复的 WebSocket 收盘事件不会制造脏数据。"""
@@ -217,9 +293,7 @@ class MonitorRuntime:
                 stale_keys = [key for key in keys if self.websocket.is_stale(*key)]
                 for symbol, timeframe in stale_keys:
                     # limit=2 的权重最低，且只有存在前端订阅并确认断流时才会请求。
-                    klines = await self.client.klines(symbol, timeframe, 2)
-                    if klines:
-                        await self.on_kline(klines[-1])
+                    await self.repair_market_klines(symbol, timeframe, limit=2)
             except asyncio.CancelledError:
                 raise
             except Exception:

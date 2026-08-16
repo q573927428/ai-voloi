@@ -82,8 +82,18 @@ class BinanceClient:
             ) for item in data
         }
 
-    async def klines(self, symbol: str, timeframe: str, limit: int) -> list[KlineData]:
-        data = await self._get("/fapi/v1/klines", {"symbol": symbol, "interval": timeframe, "limit": limit})
+    async def klines(
+        self,
+        symbol: str,
+        timeframe: str,
+        limit: int,
+        start_ms: int | None = None,
+    ) -> list[KlineData]:
+        """读取 K 线；start_ms 用于从数据库最新记录开始增量补齐。"""
+        params = {"symbol": symbol, "interval": timeframe, "limit": limit}
+        if start_ms is not None:
+            params["startTime"] = start_ms
+        data = await self._get("/fapi/v1/klines", params)
         now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
         return [
             KlineData(

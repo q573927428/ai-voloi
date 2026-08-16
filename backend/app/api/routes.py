@@ -1,5 +1,6 @@
 """HTTP 与 WebSocket API 路由。"""
 
+import logging
 from datetime import datetime, time, timezone
 from uuid import UUID
 
@@ -24,6 +25,7 @@ from app.services.cache.technical_indicators import ema_series
 from app.services.chart import build_chart_candles
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/health")
@@ -165,6 +167,13 @@ async def realtime_chart(
     runtime = request.app.state.runtime
     if timeframe not in runtime.config.timeframes:
         raise HTTPException(status_code=404, detail="Unsupported timeframe")
+    if runtime.websocket.is_stale(normalized_symbol, timeframe):
+        try:
+            # 首屏响应前修复最近窗口，避免数据库历史与当前缓存之间缺少已收盘 K 线。
+            await runtime.repair_market_klines(normalized_symbol, timeframe)
+        except Exception:
+            # Binance 临时不可达时仍返回已有历史，实时兜底循环会在连接建立后继续重试。
+            logger.exception("Failed to repair realtime chart gap for %s %s", normalized_symbol, timeframe)
     rows = (await session.execute(
         select(Kline)
         .where(

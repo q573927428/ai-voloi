@@ -71,6 +71,9 @@ class Scanner:
                     if not current:
                         continue
                     progress = kline_progress(current, started)
+                    # 扫描只针对正在形成的 K 线；缓存短暂滞后时不能把上一根已收盘 K 线误记成 100%。
+                    if progress >= 1:
+                        continue
                     if progress * 100 < config.min_progress_percent:
                         continue
                     ema = volume_ema(closed, config.volume_ema_period)
