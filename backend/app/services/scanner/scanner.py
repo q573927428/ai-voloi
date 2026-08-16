@@ -16,6 +16,9 @@ from app.services.cache.technical_indicators import TechnicalIndicators, calcula
 
 logger = logging.getLogger(__name__)
 
+# OI 是时点快照而非周期累计值。固定使用扫描间隔粒度，才能在未完成 K 线内取得开盘与最新观察点。
+OI_HISTORY_PERIOD = "5m"
+
 
 def select_oi_range(points, target_start: datetime, now: datetime):
     """选择最接近 K 线开盘的 OI 起点和扫描时可用的最新终点。"""
@@ -94,7 +97,9 @@ class Scanner:
                 try:
                     run.oi_request_count += 1
                     points = await self.client.open_interest(
-                        symbol, timeframe, int(current.open_time.timestamp() * 1000)
+                        symbol,
+                        OI_HISTORY_PERIOD,
+                        int(current.open_time.timestamp() * 1000),
                     )
                     matched = select_oi_range(points, current.open_time, started)
                     if not matched:

@@ -38,7 +38,7 @@ docker-compose.yml          PostgreSQL、后端、前端编排
 3. `estimatedVolume = currentVolume / progress`。
 4. 用最近 `volume_ema_period` 根已收盘 K 线计算 EMA，当前 K 线不进入基准。
 5. `volumeRatio = estimatedVolume / volumeEMA`；达到阈值后才请求 OI。
-6. 按时间戳选择最接近当前 K 线开盘的有效 OI，以及不晚于扫描时刻的最新 OI。
+6. 使用固定 `5m` 粒度查询 OI 时点序列，按时间戳选择最接近当前 K 线开盘的有效 OI，以及不晚于扫描时刻的最新 OI；Signal 的 K 线周期保持不变。
 7. `oiChangePercent = (newestOI - oldestOI) / oldestOI × 100`。默认阈值 `0.05` 表示 `0.05%`。
 8. 两项条件同时满足时保存 `VOLUME_OI_ANOMALY` 完整快照，并推送前端。
 

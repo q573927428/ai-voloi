@@ -105,9 +105,10 @@ class BinanceClient:
             ) for row in data
         ]
 
-    async def open_interest(self, symbol: str, timeframe: str, start_ms: int, limit: int = 100) -> list[OIPoint]:
+    async def open_interest(self, symbol: str, period: str, start_ms: int, limit: int = 100) -> list[OIPoint]:
+        """读取指定采样粒度的 OI 时点序列；period 不代表 Signal 的 K 线周期。"""
         data = await self._get("/futures/data/openInterestHist", {
-            "symbol": symbol, "period": timeframe, "startTime": start_ms, "limit": limit
+            "symbol": symbol, "period": period, "startTime": start_ms, "limit": limit
         })
         return [
             OIPoint(timestamp=datetime.fromtimestamp(row["timestamp"] / 1000, timezone.utc), open_interest=row["sumOpenInterest"])
