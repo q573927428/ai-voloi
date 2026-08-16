@@ -42,3 +42,10 @@ coverage/
 # 缓存
 .cache/
 .temp/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+*.py[cod]
+*.db
+.venv/
+htmlcov/
