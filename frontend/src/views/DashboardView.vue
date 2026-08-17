@@ -13,6 +13,7 @@ const router = useRouter()
 const stats = ref<DashboardStats | null>(null)
 const signals = ref<SignalSnapshot[]>([])
 const loading = ref(false)
+const scanning = ref(false)
 const poolVisible = ref(false)
 const poolLoading = ref(false)
 const marketMode = ref<'all' | 'active'>('active')
@@ -42,6 +43,8 @@ const snapshotTime = (value: string) => new Date(value).toLocaleString('zh-CN', 
 
 /** 同时刷新运行指标和最近 Signal，保持概览数据时间一致。 */
 async function load() {
+  // 防止重复点击"刷新"或定时器与手动刷新并发
+  if (loading.value) return
   loading.value = true
   try {
     const [summary, page] = await Promise.all([api.dashboard(), api.signals({ page_size: 10 })])
@@ -56,12 +59,17 @@ async function load() {
 
 /** 手动扫描用于运维检查，完成后立即刷新指标。 */
 async function scan() {
+  // 防止扫描进行中重复点击，避免触发多次扫描任务
+  if (scanning.value) return
+  scanning.value = true
   try {
     await api.runScanner()
     ElMessage.success('扫描已完成')
     await load()
   } catch (error) {
     ElMessage.error(errorMessage(error))
+  } finally {
+    scanning.value = false
   }
 }
 
@@ -88,7 +96,7 @@ onUnmounted(() => timer && window.clearInterval(timer))
 <template>
   <div class="section-head">
     <span />
-    <div><el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button><el-button type="primary" :icon="VideoPlay" @click="scan">立即扫描</el-button></div>
+    <div><el-button :icon="Refresh" :loading="loading" :disabled="loading" @click="load">刷新</el-button><el-button type="primary" :icon="VideoPlay" :loading="scanning" :disabled="scanning" @click="scan">立即扫描</el-button></div>
   </div>
   <div class="metric-grid" v-loading="loading && !stats">
     <div class="metric"><p class="metric-label">全部 USDT 永续</p><button class="metric-value metric-value-button" type="button" aria-label="查看全部 USDT 永续明细" @click="openMarketDrawer('all')">{{ stats?.total_symbols ?? '—' }}</button><div class="metric-note">Binance 当前可交易合约 · 点击查看明细</div></div>
