@@ -17,6 +17,7 @@ import {
 import { api, errorMessage } from '../api/client'
 import type { RealtimeKlineMessage, SignalChartCandle, SignalChartData } from '../types'
 import { resolvePricePrecision } from '../utils/price'
+import CoinIcon from './CoinIcon.vue'
 
 /** 图表定位所需的 Signal 标识与可见标题。 */
 const props = defineProps<{ signalId: string; symbol: string; timeframe: string }>()
@@ -393,7 +394,7 @@ onUnmounted(() => {
   <section class="chart-band">
     <div class="chart-head">
       <div class="chart-primary">
-        <div class="chart-copy"><h2>{{ symbol }} · {{ selectedTimeframe }}</h2><span>{{ mode === 'realtime' ? '实时行情' : '检测时刻快照' }} · UTC+8</span></div>
+        <div class="chart-copy"><h2><CoinIcon :symbol="symbol" :size="16" />{{ symbol }} · {{ selectedTimeframe }}</h2><span>{{ mode === 'realtime' ? '实时行情' : '检测时刻快照' }} · UTC+8</span></div>
         <div v-if="latestCandle" class="market-strip">
           <div class="market-item latest"><span>最新价格</span><strong :class="latestPriceDirection">{{ formatMarketPrice(latestCandle.close) }}</strong></div>
           <div class="market-item"><span>变化</span><strong :class="candleChangePercent(latestCandle) >= 0 ? 'up' : 'down'">{{ candleChangePercent(latestCandle) >= 0 ? '+' : '' }}{{ candleChangePercent(latestCandle).toFixed(2) }}%</strong></div>
@@ -422,7 +423,7 @@ onUnmounted(() => {
 <style scoped>
 .chart-band { position: relative; margin-bottom: 24px; border: 1px solid #dfe4e9; border-radius: 7px; overflow: hidden; background: #fff; }
 .chart-head { min-height: 66px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; padding: 12px 18px; border-bottom: 1px solid #e5e9ed; }
-.chart-head h2 { margin: 0 0 4px; font-size: 16px; letter-spacing: 0; }
+.chart-head h2 { margin: 0 0 4px; font-size: 16px; letter-spacing: 0; display: flex; align-items: center; gap: 5px; }
 .chart-copy > span { color: #7d8997; font-size: 12px; }
 .chart-primary { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; }
 .chart-copy { flex: 0 0 auto; }

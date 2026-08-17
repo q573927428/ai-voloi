@@ -40,6 +40,8 @@ main { min-width: 0; }
 .table-frame { border: 1px solid #dfe4e9; background: #fff; }
 .number { font-variant-numeric: tabular-nums; }
 .market-symbol { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.coin-icon { border-radius: 50%; object-fit: cover; }
+.coin-fallback { display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 9px; font-weight: 700; line-height: 1; user-select: none; }
 .tradfi-tag { font-weight: 650; }
 .positive { color: #14805e; font-weight: 600; }
 .negative { color: #c54d4a; }
