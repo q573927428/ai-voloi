@@ -66,6 +66,11 @@ function performanceClass(value?: string | null): string {
   return Number(value) >= 0 ? 'positive' : 'negative'
 }
 
+/** 普通正数保持默认文字色，仅超过 5x 或 5% 时使用深绿色突出显示。 */
+function standoutMetricClass(value: string): string {
+  return Number(value) > 5 ? 'standout-metric' : ''
+}
+
 /**
  * 将同一轮扫描中同交易对的多周期 Signal 收拢在一起。
  * 切换指标排序时保留接口返回的组顺序；默认按时间排序时，同一扫描内优先显示共振周期更多的交易对。
@@ -117,8 +122,8 @@ function groupRowClass({ row }: { row: GroupedSignalRow }): string {
     <el-table-column label="进度" width="90" align="right"><template #default="{ row }">{{ Number(row.progress_percent).toFixed(1) }}%</template></el-table-column>
     <el-table-column label="预计量" min-width="120" align="right"><template #default="{ row }">{{ compact(row.estimated_volume) }}</template></el-table-column>
     <el-table-column label="EMA量" min-width="100" align="right"><template #default="{ row }">{{ compact(row.volume_ema) }}</template></el-table-column>
-    <el-table-column label="量比" min-width="80" align="right"><template #default="{ row }"><span class="positive">{{ Number(row.volume_ratio).toFixed(2) }}x</span></template></el-table-column>
-    <el-table-column label="OI 变化" min-width="108" align="right"><template #default="{ row }"><div class="oi-change"><span class="positive">+{{ Number(row.oi_change_percent).toFixed(3) }}%</span><small>{{ oiWindow(row.oi_lookback_minutes) }}</small></div></template></el-table-column>
+    <el-table-column label="量比" min-width="80" align="right"><template #default="{ row }"><span :class="standoutMetricClass(row.volume_ratio)">{{ Number(row.volume_ratio).toFixed(2) }}x</span></template></el-table-column>
+    <el-table-column label="OI 变化" min-width="108" align="right"><template #default="{ row }"><div class="oi-change"><span :class="standoutMetricClass(row.oi_change_percent)">+{{ Number(row.oi_change_percent).toFixed(3) }}%</span><small>{{ oiWindow(row.oi_lookback_minutes) }}</small></div></template></el-table-column>
     <el-table-column label="24h 成交额" min-width="116" align="right"><template #default="{ row }">{{ compact(row.quote_volume_24h) }}</template></el-table-column>
     <el-table-column label="最大盈利" min-width="100" align="right"><template #default="{ row }"><span :class="performanceClass(row.future_performance?.max_profit_percent)">{{ performancePercent(row.future_performance?.max_profit_percent) }}</span></template></el-table-column>
     <el-table-column label="最大亏损" min-width="100" align="right"><template #default="{ row }"><span :class="performanceClass(row.future_performance?.max_loss_percent)">{{ performancePercent(row.future_performance?.max_loss_percent) }}</span></template></el-table-column>
@@ -131,6 +136,7 @@ function groupRowClass({ row }: { row: GroupedSignalRow }): string {
 
 <style scoped>
 .pending { color: #8a95a1; font-size: 12px; }
+.standout-metric { display: inline-block; color: #075c42; font-weight: 750; }
 .symbol-group { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
 .resonance-tag { font-weight: 600; }
 .timeframe-tag { min-width: 42px; font-weight: 600; }
