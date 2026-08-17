@@ -16,7 +16,9 @@ DEFAULT_OI_LOOKBACK_MINUTES_BY_TIMEFRAME = {
     "4h": 240,
     "1d": 1440,
 }
+DEFAULT_OI_CHANGE_THRESHOLD_PERCENT = Decimal("0.05")
 OILookbackMinutes = Annotated[int, Field(ge=5, le=10080)]
+OIChangeThresholdPercent = Annotated[Decimal, Field(ge=Decimal("0"), le=Decimal("100"))]
 
 
 class KlineData(BaseModel):
@@ -55,7 +57,7 @@ class OIPoint(BaseModel):
 
 
 class ConfigValues(BaseModel):
-    """已校验的完整扫描配置；OI 窗口按 K 线周期独立设置。"""
+    """已校验的完整扫描配置；OI 回看窗口和变化阈值均按 K 线周期独立设置。"""
     timeframes: list[str] = ["15m", "30m", "1h", "4h", "1d"]
     min_24h_quote_volume: Decimal = Decimal("10000000")
     volume_ema_period: int = Field(default=12, ge=2, le=100)
@@ -64,27 +66,41 @@ class ConfigValues(BaseModel):
     oi_lookback_minutes_by_timeframe: dict[str, OILookbackMinutes] = Field(
         default_factory=lambda: DEFAULT_OI_LOOKBACK_MINUTES_BY_TIMEFRAME.copy()
     )
-    oi_change_threshold_percent: Decimal = Field(default=Decimal("0.05"), ge=Decimal("0"), le=Decimal("100"))
+    oi_change_threshold_percent_by_timeframe: dict[str, OIChangeThresholdPercent] = Field(
+        default_factory=lambda: {
+            timeframe: DEFAULT_OI_CHANGE_THRESHOLD_PERCENT
+            for timeframe in DEFAULT_OI_LOOKBACK_MINUTES_BY_TIMEFRAME
+        }
+    )
     scan_interval_minutes: int = Field(default=5, ge=1, le=60)
 
     @model_validator(mode="before")
     @classmethod
     def migrate_legacy_oi_lookback(cls, data):
-        """把旧版全局 OI 窗口迁移为逐周期配置，并保留用户的非默认自定义值。"""
-        if not isinstance(data, dict) or "oi_lookback_minutes_by_timeframe" in data:
+        """把旧版全局 OI 窗口及阈值迁移为逐周期配置。"""
+        if not isinstance(data, dict):
             return data
         values = dict(data)
-        legacy = values.pop("oi_lookback_minutes", None)
         timeframes = values.get("timeframes", ["15m", "30m", "1h", "4h", "1d"])
-        if legacy is not None and int(legacy) != 15:
-            # 旧配置若被用户主动修改过，则升级后继续对所有周期使用该值。
-            values["oi_lookback_minutes_by_timeframe"] = {
-                timeframe: int(legacy) for timeframe in timeframes
-            }
-        else:
-            values["oi_lookback_minutes_by_timeframe"] = {
-                timeframe: DEFAULT_OI_LOOKBACK_MINUTES_BY_TIMEFRAME.get(timeframe, 15)
-                for timeframe in timeframes
+        if "oi_lookback_minutes_by_timeframe" not in values:
+            legacy_lookback = values.pop("oi_lookback_minutes", None)
+            if legacy_lookback is not None and int(legacy_lookback) != 15:
+                # 旧配置若被用户主动修改过，则升级后继续对所有周期使用该值。
+                values["oi_lookback_minutes_by_timeframe"] = {
+                    timeframe: int(legacy_lookback) for timeframe in timeframes
+                }
+            else:
+                values["oi_lookback_minutes_by_timeframe"] = {
+                    timeframe: DEFAULT_OI_LOOKBACK_MINUTES_BY_TIMEFRAME.get(timeframe, 15)
+                    for timeframe in timeframes
+                }
+        if "oi_change_threshold_percent_by_timeframe" not in values:
+            # 旧版只有一个全局阈值，升级时复制到所有启用周期，确保扫描行为不变。
+            legacy_threshold = values.pop(
+                "oi_change_threshold_percent", DEFAULT_OI_CHANGE_THRESHOLD_PERCENT
+            )
+            values["oi_change_threshold_percent_by_timeframe"] = {
+                timeframe: legacy_threshold for timeframe in timeframes
             }
         return values
 
@@ -95,15 +111,22 @@ class ConfigValues(BaseModel):
             DEFAULT_OI_LOOKBACK_MINUTES_BY_TIMEFRAME.get(timeframe, 15),
         )
 
+    def oi_change_threshold_for(self, timeframe: str) -> Decimal:
+        """返回指定 K 线周期的 OI 变化阈值，未知周期使用 0.05% 兜底。"""
+        return self.oi_change_threshold_percent_by_timeframe.get(
+            timeframe,
+            DEFAULT_OI_CHANGE_THRESHOLD_PERCENT,
+        )
+
 
 class ConfigUpdate(BaseModel):
-    """配置接口允许局部修改的字段，包括逐 K 线周期的 OI 回看窗口。"""
+    """配置接口允许局部修改的字段，包括逐 K 线周期的 OI 回看窗口及阈值。"""
     min_24h_quote_volume: Decimal | None = Field(default=None, ge=0)
     volume_ema_period: int | None = Field(default=None, ge=2, le=100)
     volume_multiplier: Decimal | None = Field(default=None, ge=1, le=100)
     min_progress_percent: Decimal | None = Field(default=None, ge=0, le=100)
     oi_lookback_minutes_by_timeframe: dict[str, OILookbackMinutes] | None = None
-    oi_change_threshold_percent: Decimal | None = Field(default=None, ge=0, le=100)
+    oi_change_threshold_percent_by_timeframe: dict[str, OIChangeThresholdPercent] | None = None
     scan_interval_minutes: int | None = Field(default=None, ge=1, le=60)
 
 

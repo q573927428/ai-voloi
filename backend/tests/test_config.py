@@ -19,7 +19,7 @@ def test_document_defaults() -> None:
         "4h": 240,
         "1d": 1440,
     }
-    assert config.oi_change_threshold_percent == Decimal("0.05")
+    assert set(config.oi_change_threshold_percent_by_timeframe.values()) == {Decimal("0.05")}
 
 
 def test_invalid_progress_is_rejected() -> None:
@@ -45,3 +45,25 @@ def test_legacy_custom_oi_window_is_preserved_for_every_timeframe() -> None:
 def test_invalid_timeframe_oi_window_is_rejected() -> None:
     with pytest.raises(ValidationError):
         ConfigValues(oi_lookback_minutes_by_timeframe={"1h": 4})
+
+
+def test_legacy_oi_threshold_is_preserved_for_every_timeframe() -> None:
+    """旧版全局 OI 阈值升级后应应用到所有已配置周期。"""
+    config = ConfigValues.model_validate({
+        "timeframes": ["15m", "1h"],
+        "oi_change_threshold_percent": "0.25",
+    })
+
+    assert config.oi_change_threshold_for("15m") == Decimal("0.25")
+    assert config.oi_change_threshold_for("1h") == Decimal("0.25")
+
+
+def test_timeframe_oi_threshold_can_be_configured_independently() -> None:
+    """每个 K 线周期应读取自己的 OI 变化阈值。"""
+    config = ConfigValues(oi_change_threshold_percent_by_timeframe={
+        "15m": Decimal("0.05"),
+        "1h": Decimal("0.2"),
+    })
+
+    assert config.oi_change_threshold_for("15m") == Decimal("0.05")
+    assert config.oi_change_threshold_for("1h") == Decimal("0.2")

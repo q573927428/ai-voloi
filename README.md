@@ -98,7 +98,7 @@ FastAPI 自动文档位于 `/docs`。
 | `volume_multiplier` | `1.5` | 成交量异常倍数 |
 | `min_progress_percent` | `10` | 最小 K 线进度百分比 |
 | `oi_lookback_minutes_by_timeframe` | 按周期设置 | 各 K 线周期独立的 OI 回看分钟数 |
-| `oi_change_threshold_percent` | `0.05` | OI 变化百分比阈值 |
+| `oi_change_threshold_percent_by_timeframe` | 按周期设置，默认均为 `0.05` | 各 K 线周期独立的 OI 变化百分比阈值 |
 | `scan_interval_minutes` | `5` | 边界扫描间隔 |
 
 网络、数据库、并发和缓存参数通过 `.env` 配置，完整示例见 `.env.example`。

@@ -120,7 +120,8 @@ export interface ScannerConfig {
   min_progress_percent: number
   /** 每个 K 线周期用于计算 OI 变化率的独立回看分钟数。 */
   oi_lookback_minutes_by_timeframe: Record<string, number>
-  oi_change_threshold_percent: number
+  /** 每个 K 线周期独立触发 Signal 的 OI 变化百分比阈值。 */
+  oi_change_threshold_percent_by_timeframe: Record<string, number>
   scan_interval_minutes: number
 }
 

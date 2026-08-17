@@ -162,7 +162,8 @@ class Scanner:
                         OpenInterestSnapshot(symbol=symbol, timeframe=timeframe, open_interest=oldest.open_interest, timestamp=oldest.timestamp),
                         OpenInterestSnapshot(symbol=symbol, timeframe=timeframe, open_interest=newest.open_interest, timestamp=newest.timestamp),
                     ])
-                    if change_percent < config.oi_change_threshold_percent:
+                    # 不同 K 线周期使用各自阈值，避免短周期与长周期共用同一灵敏度。
+                    if change_percent < config.oi_change_threshold_for(timeframe):
                         continue
                     ticker = tickers.get(symbol)
                     if not ticker:
