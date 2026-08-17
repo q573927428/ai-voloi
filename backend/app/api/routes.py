@@ -237,7 +237,7 @@ async def realtime_chart(
         .limit(history_limit)
     )).scalars().all()
     rows = list(reversed(rows))
-    current, _ = await runtime.cache.snapshot(normalized_symbol, timeframe)
+    current = await runtime.cache.current(normalized_symbol, timeframe)
     visible = [*rows, *([current] if current and (not rows or current.open_time > rows[-1].open_time) else [])]
     if not visible:
         raise HTTPException(status_code=404, detail="Market Kline data not found")

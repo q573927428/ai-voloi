@@ -12,12 +12,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from app.models import OpenInterestSnapshot, ScannerRun, Signal, SignalFuturePerformance
 from app.schemas import ConfigValues, KlineData, OIPoint, TickerData
 from app.services.binance.client import BinanceClient
-from app.services.cache.kline_cache import KlineCache, kline_progress, volume_ema
-from app.services.cache.technical_indicators import (
-    TechnicalIndicators,
-    build_indicator_response,
-    calculate_technical_indicators,
-)
+from app.services.cache.kline_cache import KlineCache, kline_progress
+from app.services.cache.technical_indicators import TechnicalIndicators, build_indicator_response
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +105,9 @@ class Scanner:
 
             for timeframe in config.timeframes:
                 for symbol in symbols:
-                    current, closed = await self.cache.snapshot(symbol, timeframe)
+                    current, ema, indicators = await self.cache.scan_snapshot(
+                        symbol, timeframe, config.volume_ema_period
+                    )
                     if not current:
                         continue
                     progress = kline_progress(current, started)
@@ -118,13 +116,11 @@ class Scanner:
                         continue
                     if progress * 100 < config.min_progress_percent:
                         continue
-                    ema = volume_ema(closed, config.volume_ema_period)
                     if not ema or ema <= 0 or progress <= 0:
                         continue
                     estimated = current.volume / progress
                     ratio = estimated / ema
                     if ratio >= config.volume_multiplier:
-                        indicators = calculate_technical_indicators(closed)
                         # Signal 必须携带完整指标快照，历史数据不足时不能生成半完整记录。
                         if indicators:
                             candidates.append((symbol, timeframe, current, progress, ema, ratio, indicators))

@@ -122,6 +122,7 @@ class MonitorRuntime:
     async def refresh_pool(self) -> None:
         """批量刷新合约与 ticker，并仅初始化新进入活跃池的交易对。"""
         self.initialization_status = "loading"
+        previous_timeframes = set(self.config.timeframes)
         async with self.session_factory() as session:
             self.config = await self.config_service.get(session)
         exchange_symbols, tickers, funding_rates = await asyncio.gather(
@@ -136,16 +137,23 @@ class MonitorRuntime:
         self.active_symbols = new_active
         self.tickers = tickers
         await self._persist_symbols(available, tickers, funding_rates)
-        new_symbols = new_active - previous
-        if new_symbols:
-            await self._initialize_klines(new_symbols)
-        if new_active != previous:
+        # 先清理退出池或已禁用周期，迟到的旧 WebSocket 事件也会被缓存层拒绝。
+        await self.cache.retain(new_active, set(self.config.timeframes))
+        desired_markets = {
+            (symbol, timeframe)
+            for symbol in new_active
+            for timeframe in self.config.timeframes
+        }
+        missing_markets = desired_markets - await self.cache.market_keys()
+        if missing_markets:
+            await self._initialize_markets(missing_markets)
+        if new_active != previous or set(self.config.timeframes) != previous_timeframes:
             await self.websocket.start(new_active, self.config.timeframes)
         self.initialization_status = "ready"
 
     async def apply_config(self, config: ConfigValues) -> None:
         """配置修改后立即重新筛选池，避免等待下一次定时刷新。"""
-        self.config = config
+        # 配置服务已先提交数据库；保留 self.config 旧值供 refresh_pool 判断周期订阅是否变化。
         await self.refresh_pool()
 
     async def _persist_symbols(
@@ -177,12 +185,11 @@ class MonitorRuntime:
                 row.funding_rate = funding_rate.funding_rate if funding_rate else None
             await session.commit()
 
-    async def _initialize_klines(self, symbols: set[str]) -> None:
-        """数据库优先恢复 K 线缓存，仅对缺失或过期部分发起 REST 请求。"""
+    async def _initialize_markets(self, markets: set[tuple[str, str]]) -> None:
+        """数据库优先恢复缺失市场缓存，仅对缺失或过期部分发起 REST 请求。"""
         queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
-        for symbol in symbols:
-            for timeframe in self.config.timeframes:
-                queue.put_nowait((symbol, timeframe))
+        for market in markets:
+            queue.put_nowait(market)
 
         async def worker() -> None:
             while not queue.empty():
@@ -268,12 +275,12 @@ class MonitorRuntime:
     async def on_kline(self, kline: KlineData) -> None:
         """接收实时 K 线，并在发现收盘 K 线缺口时使用 REST 补齐。"""
         if kline.is_closed:
-            _, closed = await self.cache.snapshot(kline.symbol, kline.timeframe)
-            if closed and closed[-1].close_time < kline.open_time:
+            latest_closed = await self.cache.latest_closed(kline.symbol, kline.timeframe)
+            if latest_closed and latest_closed.close_time < kline.open_time:
                 # 重连期间可能跨过多个周期，REST 返回最近窗口后按开盘时间去重写入缓存。
                 repaired = await self.client.klines(kline.symbol, kline.timeframe, 20)
                 for item in repaired:
-                    if item.is_closed and item.open_time > closed[-1].open_time:
+                    if item.is_closed and item.open_time > latest_closed.open_time:
                         await self.cache.update(item)
                 await self._persist_closed_klines(repaired)
         closed_now = await self.cache.update(kline)
@@ -295,8 +302,8 @@ class MonitorRuntime:
     async def repair_market_klines(self, symbol: str, timeframe: str, limit: int = 20) -> None:
         """按时间顺序合并最近 K 线，补齐断流期间的完整 K 线并刷新当前 K 线。"""
         klines = await self.client.klines(symbol, timeframe, limit)
-        _, closed = await self.cache.snapshot(symbol, timeframe)
-        latest_closed_open = closed[-1].open_time if closed else None
+        latest_closed = await self.cache.latest_closed(symbol, timeframe)
+        latest_closed_open = latest_closed.open_time if latest_closed else None
         relevant = (
             item for item in klines
             if latest_closed_open is None or item.open_time >= latest_closed_open
