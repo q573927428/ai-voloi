@@ -51,6 +51,7 @@ onMounted(load)
     :signal-id="signal.id"
     :symbol="signal.symbol"
     :timeframe="signal.timeframe"
+    :is-tradfi="signal.is_tradfi"
   />
   <div v-if="signal" class="detail-grid" v-loading="loading">
     <section class="detail-section"><h2>K 线快照 · <MarketSymbol :symbol="signal.symbol" :is-tradfi="signal.is_tradfi" /> / {{ signal.timeframe }}</h2><div class="kv"><span>检测时间</span><strong>{{ dt(signal.detected_at) }}</strong></div><div class="kv"><span>K 线区间</span><strong>{{ dt(signal.open_time) }} - {{ dt(signal.close_time) }}</strong></div><div class="kv"><span>OHLC</span><strong>{{ n(signal.open) }} / {{ n(signal.high) }} / {{ n(signal.low) }} / {{ n(signal.current_price) }}</strong></div><div class="kv"><span>形成进度</span><strong>{{ Number(signal.progress_percent).toFixed(2) }}%</strong></div><div class="kv"><span>Quote Volume</span><strong>{{ n(signal.current_quote_volume) }}</strong></div></section>
@@ -59,11 +60,14 @@ onMounted(load)
     <section class="detail-section"><h2>24h 市场快照</h2><div class="kv"><span>最新价格</span><strong>{{ n(signal.last_price) }}</strong></div><div class="kv"><span>价格变化</span><strong :class="Number(signal.price_change_percent_24h) >= 0 ? 'positive' : 'negative'">{{ n(signal.price_change_percent_24h) }}%</strong></div><div class="kv"><span>Quote Volume</span><strong>{{ n(signal.quote_volume_24h) }}</strong></div></section>
     <section class="detail-section indicator-section">
       <div class="indicator-head">
-        <h2>趋势指标 · 完整 K 线</h2>
-        <el-tag v-if="signal.technical_indicators" :type="alignmentType" effect="plain">{{ alignmentText }}</el-tag>
+        <h2>技术指标 · 完整 K 线</h2>
+        <div v-if="signal.technical_indicators" class="indicator-tags">
+          <el-tag :type="signal.technical_indicators.warmup_complete ? 'success' : 'warning'" effect="plain">{{ signal.technical_indicators.warmup_complete ? '预热完成' : '预热中' }}</el-tag>
+          <el-tag :type="alignmentType" effect="plain">{{ alignmentText }}</el-tag>
+        </div>
       </div>
       <template v-if="signal.technical_indicators">
-        <div class="indicator-meta">截至 {{ dt(signal.technical_indicators.as_of) }} · {{ signal.technical_indicators.candle_count }} 根完整 K 线 · 收盘价 {{ n(signal.technical_indicators.source_close) }}</div>
+        <div class="indicator-meta">截至 {{ dt(signal.technical_indicators.as_of) }} · {{ signal.technical_indicators.candle_count }} 根完整 K 线 · 收盘价 {{ n(signal.technical_indicators.source_close) }} · 指标版本 {{ signal.technical_indicators.version }}</div>
         <div class="ema-table">
           <div class="ema-row ema-header"><span>周期</span><span>EMA</span><span>价格距离</span><span>斜率 / 根</span></div>
           <div v-for="item in emaRows" :key="item.period" class="ema-row">
@@ -73,17 +77,46 @@ onMounted(load)
             <strong :class="tone(item.slope_percent)">{{ n(item.slope_percent) }}%</strong>
           </div>
         </div>
-        <div class="indicator-summary">
-          <div class="kv"><span>ADX14</span><strong>{{ n(signal.technical_indicators.trend.adx.value) }}</strong></div>
-          <div class="kv"><span>+DI14 / -DI14</span><strong><b class="positive">{{ n(signal.technical_indicators.trend.adx.plus_di) }}</b> / <b class="negative">{{ n(signal.technical_indicators.trend.adx.minus_di) }}</b></strong></div>
-          <div class="kv"><span>ADX 斜率</span><strong :class="tone(signal.technical_indicators.trend.adx.slope)">{{ n(signal.technical_indicators.trend.adx.slope) }} 点/根</strong></div>
-          <div class="kv"><span>ATR14 / ATR%</span><strong>{{ n(signal.technical_indicators.volatility.atr.value) }} / {{ n(signal.technical_indicators.volatility.atr.percent) }}%</strong></div>
+        <div class="indicator-groups">
+          <div class="indicator-group">
+            <h3>趋势强度</h3>
+            <div class="kv"><span>ADX14</span><strong>{{ n(signal.technical_indicators.trend.adx.value) }}</strong></div>
+            <div class="kv"><span>+DI14 / -DI14</span><strong><b class="positive">{{ n(signal.technical_indicators.trend.adx.plus_di) }}</b> / <b class="negative">{{ n(signal.technical_indicators.trend.adx.minus_di) }}</b></strong></div>
+            <div class="kv"><span>ADX 斜率</span><strong :class="tone(signal.technical_indicators.trend.adx.slope)">{{ n(signal.technical_indicators.trend.adx.slope) }} 点/根</strong></div>
+          </div>
+          <div class="indicator-group">
+            <h3>动量</h3>
+            <div class="kv"><span>RSI14</span><strong>{{ n(signal.technical_indicators.momentum.rsi14) }}</strong></div>
+            <div class="kv"><span>MACD Line</span><strong :class="tone(signal.technical_indicators.momentum.macd.line)">{{ n(signal.technical_indicators.momentum.macd.line) }}</strong></div>
+            <div class="kv"><span>MACD Signal</span><strong :class="tone(signal.technical_indicators.momentum.macd.signal)">{{ n(signal.technical_indicators.momentum.macd.signal) }}</strong></div>
+            <div class="kv"><span>MACD Histogram</span><strong :class="tone(signal.technical_indicators.momentum.macd.histogram)">{{ n(signal.technical_indicators.momentum.macd.histogram) }}</strong></div>
+          </div>
+          <div class="indicator-group">
+            <h3>波动率</h3>
+            <div class="kv"><span>ATR14</span><strong>{{ n(signal.technical_indicators.volatility.atr.value) }}</strong></div>
+            <div class="kv"><span>ATR14%</span><strong>{{ n(signal.technical_indicators.volatility.atr.percent) }}%</strong></div>
+            <div class="kv"><span>布林上轨</span><strong>{{ n(signal.technical_indicators.volatility.bollinger.upper) }}</strong></div>
+            <div class="kv"><span>布林中轨</span><strong>{{ n(signal.technical_indicators.volatility.bollinger.middle) }}</strong></div>
+            <div class="kv"><span>布林下轨</span><strong>{{ n(signal.technical_indicators.volatility.bollinger.lower) }}</strong></div>
+            <div class="kv"><span>布林带宽</span><strong>{{ n(signal.technical_indicators.volatility.bollinger.bandwidth_percent) }}%</strong></div>
+            <div class="kv"><span>布林 %B</span><strong>{{ n(signal.technical_indicators.volatility.bollinger.percent_b) }}</strong></div>
+          </div>
+          <div class="indicator-group">
+            <h3>量价</h3>
+            <div class="kv"><span>MFI14</span><strong>{{ n(signal.technical_indicators.volume.mfi14) }}</strong></div>
+            <div class="kv"><span>OBV</span><strong :class="tone(signal.technical_indicators.volume.obv)">{{ n(signal.technical_indicators.volume.obv) }}</strong></div>
+          </div>
         </div>
       </template>
       <template v-else>
         <div class="kv"><span>EMA14</span><strong>{{ n(signal.ema14) }}</strong></div>
         <div class="kv"><span>EMA50</span><strong>{{ n(signal.ema50) }}</strong></div>
+        <div class="kv"><span>RSI14</span><strong>{{ n(signal.rsi14) }}</strong></div>
         <div class="kv"><span>ADX14</span><strong>{{ n(signal.adx14) }}</strong></div>
+        <div class="kv"><span>ATR14</span><strong>{{ n(signal.atr14) }}</strong></div>
+        <div class="kv"><span>ADX 斜率</span><strong :class="tone(signal.adx_slope)">{{ n(signal.adx_slope) }} 点/根</strong></div>
+        <div class="kv"><span>EMA14 斜率</span><strong :class="tone(signal.ema14_slope_percent)">{{ n(signal.ema14_slope_percent) }}%/根</strong></div>
+        <div class="kv"><span>EMA50 斜率</span><strong :class="tone(signal.ema50_slope_percent)">{{ n(signal.ema50_slope_percent) }}%/根</strong></div>
         <div class="indicator-meta">旧 Signal 尚未回填结构化指标快照</div>
       </template>
     </section>
@@ -96,16 +129,22 @@ onMounted(load)
 .indicator-section { grid-column: 1 / -1; }
 .indicator-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .indicator-head h2 { margin-bottom: 0; }
+.indicator-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .indicator-meta { margin: 10px 0 16px; color: #72808e; font-size: 12px; }
 .ema-table { border-top: 1px solid #dfe4e9; border-bottom: 1px solid #dfe4e9; }
 .ema-row { display: grid; grid-template-columns: 90px repeat(3, minmax(120px, 1fr)); gap: 16px; align-items: center; min-height: 42px; border-bottom: 1px solid #edf0f3; font-size: 13px; }
 .ema-row:last-child { border-bottom: 0; }
 .ema-row > span:not(:first-child), .ema-row > strong:not(:first-child) { text-align: right; }
 .ema-header { min-height: 36px; color: #72808e; font-size: 12px; }
-.indicator-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: 36px; margin-top: 10px; }
+.indicator-groups { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: 36px; margin-top: 22px; }
+.indicator-group h3 { margin: 0 0 8px; color: #4f5c69; font-size: 13px; }
+@media (max-width: 1200px) {
+  .indicator-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 22px; }
+}
 @media (max-width: 720px) {
   .ema-table { overflow-x: auto; }
   .ema-row { min-width: 560px; }
-  .indicator-summary { grid-template-columns: 1fr; }
+  .indicator-head { align-items: flex-start; }
+  .indicator-groups { grid-template-columns: 1fr; row-gap: 22px; }
 }
 </style>

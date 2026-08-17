@@ -19,8 +19,15 @@ import type { RealtimeKlineMessage, SignalChartCandle, SignalChartData } from '.
 import { resolvePricePrecision } from '../utils/price'
 import CoinIcon from './CoinIcon.vue'
 
-/** 图表定位所需的 Signal 标识与可见标题。 */
-const props = defineProps<{ signalId: string; symbol: string; timeframe: string }>()
+/** Signal 图表定位、标题及 TradFi 分类标识。 */
+interface SignalTradingViewChartProps {
+  signalId: string
+  symbol: string
+  timeframe: string
+  isTradfi?: boolean
+}
+
+const props = withDefaults(defineProps<SignalTradingViewChartProps>(), { isTradfi: false })
 const container = ref<HTMLDivElement | null>(null)
 const loading = ref(true)
 const error = ref('')
@@ -31,6 +38,7 @@ const secondaryEmaPeriod = ref<EmaPeriod>(50)
 const primaryEmaValue = ref('—')
 const secondaryEmaValue = ref('—')
 const latestCandle = ref<SignalChartCandle | null>(null)
+const candleCount = ref(0)
 const latestPriceDirection = ref<'up' | 'down' | 'flat'>('flat')
 const mode = ref<'snapshot' | 'realtime'>('realtime')
 const liveConnected = ref(false)
@@ -198,6 +206,7 @@ function updateSignalMarker(items: SignalChartCandle[]) {
 /** 将完整窗口写入全部图表序列，并恢复默认观察范围。 */
 function setChartCandles(items: SignalChartCandle[]) {
   visibleCandles = items
+  candleCount.value = items.length
   const latest = items[items.length - 1]
   if (latest) applyPricePrecision(Number(latest.close))
   latestPriceDirection.value = 'flat'
@@ -235,6 +244,7 @@ function updateRealtimeCandle(item: SignalChartCandle) {
   latestCandle.value = item
   if (isNewCandle) visibleCandles.push(item)
   else if (visibleCandles.length) visibleCandles[visibleCandles.length - 1] = item
+  candleCount.value = visibleCandles.length
   candleSeries?.update({
     time, open: Number(item.open), high: Number(item.high), low: Number(item.low), close: Number(item.close),
   })
@@ -422,7 +432,7 @@ onUnmounted(() => {
   <section class="chart-band">
     <div class="chart-head">
       <div class="chart-primary">
-        <div class="chart-copy"><h2><CoinIcon :symbol="symbol" :size="16" />{{ symbol }} · {{ selectedTimeframe }}</h2><span>{{ mode === 'realtime' ? '实时行情' : '检测时刻快照' }} · UTC+8</span></div>
+        <div class="chart-copy"><h2><CoinIcon :symbol="symbol" :size="16" />{{ symbol }}<el-tooltip v-if="isTradfi" content="TradFi"><el-tag class="chart-tradfi" type="warning" effect="plain" size="small">T</el-tag></el-tooltip><span>· {{ selectedTimeframe }}</span></h2><span>{{ mode === 'realtime' ? '实时行情' : '检测时刻快照' }} · UTC+8 · 共 {{ candleCount }} 根 K 线</span></div>
         <div v-if="latestCandle" class="market-strip">
           <div class="market-item latest"><span>最新价格</span><strong :class="latestPriceDirection">{{ formatMarketPrice(latestCandle.close) }}</strong></div>
           <div class="market-item"><span>变化</span><strong :class="candleChangePercent(latestCandle) >= 0 ? 'up' : 'down'">{{ candleChangePercent(latestCandle) >= 0 ? '+' : '' }}{{ candleChangePercent(latestCandle).toFixed(2) }}%</strong></div>
@@ -473,6 +483,7 @@ onUnmounted(() => {
 .chart-band { position: relative; margin-bottom: 24px; border: 1px solid #dfe4e9; border-radius: 7px; overflow: hidden; background: #fff; }
 .chart-head { min-height: 66px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; padding: 12px 18px; border-bottom: 1px solid #e5e9ed; }
 .chart-head h2 { margin: 0 0 4px; font-size: 16px; letter-spacing: 0; display: flex; align-items: center; gap: 5px; }
+.chart-tradfi { font-weight: 650; }
 .chart-copy > span { color: #7d8997; font-size: 12px; }
 .chart-primary { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; }
 .chart-copy { flex: 0 0 auto; }
