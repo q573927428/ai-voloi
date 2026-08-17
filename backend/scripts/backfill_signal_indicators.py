@@ -7,14 +7,19 @@ from sqlalchemy import select
 from app.core.database import SessionLocal, engine
 from app.models import Kline, Signal
 from app.schemas import KlineData
-from app.services.cache.technical_indicators import calculate_technical_indicators
+from app.services.cache.technical_indicators import (
+    build_indicator_response,
+    calculate_technical_indicators,
+)
 
 
 async def backfill() -> int:
-    """回算所有缺少 EMA14 的 Signal，返回成功补齐的记录数。"""
+    """回算所有缺少结构化指标快照的 Signal，返回成功补齐的记录数。"""
     updated = 0
     async with SessionLocal() as session:
-        signals = (await session.execute(select(Signal).where(Signal.ema14.is_(None)))).scalars().all()
+        signals = (
+            await session.execute(select(Signal).where(Signal.technical_indicators.is_(None)))
+        ).scalars().all()
         for signal in signals:
             rows = (await session.execute(
                 select(Kline)
@@ -25,7 +30,7 @@ async def backfill() -> int:
                     Kline.open_time < signal.open_time,
                 )
                 .order_by(Kline.open_time.desc())
-                .limit(100)
+                .limit(1000)
             )).scalars().all()
             klines = [
                 KlineData(
@@ -46,8 +51,18 @@ async def backfill() -> int:
             indicators = calculate_technical_indicators(klines)
             if not indicators:
                 continue
-            for field, value in indicators.__dict__.items():
-                setattr(signal, field, value)
+            # 旧扁平字段继续补齐，结构化快照承载第一、二期全部指标。
+            signal.ema14 = indicators.ema14
+            signal.ema50 = indicators.ema50
+            signal.rsi14 = indicators.rsi14
+            signal.adx14 = indicators.adx14
+            signal.atr14 = indicators.atr14
+            signal.adx_slope = indicators.adx_slope
+            signal.ema14_slope_percent = indicators.ema14_slope_percent
+            signal.ema50_slope_percent = indicators.ema50_slope_percent
+            signal.technical_indicators = build_indicator_response(
+                signal.symbol, signal.timeframe, indicators
+            ).model_dump(mode="json")
             updated += 1
         await session.commit()
     return updated

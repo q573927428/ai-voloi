@@ -203,6 +203,8 @@ async def test_signal_requires_both_volume_and_oi_and_is_published() -> None:
     assert published[0].rsi14 is not None
     assert published[0].adx14 is not None
     assert published[0].atr14 is not None
+    assert published[0].technical_indicators["trend"]["ema"]["9"]["value"] is not None
+    assert published[0].technical_indicators["momentum"]["macd"]["line"] is not None
     assert published[0].oi_lookback_minutes == 30
 
 

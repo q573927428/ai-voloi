@@ -36,6 +36,102 @@ class KlineData(BaseModel):
     is_closed: bool
 
 
+class EmaIndicatorRead(BaseModel):
+    """单个 EMA 的值、斜率及相对最新完整 K 线收盘价的距离。"""
+
+    period: int
+    value: Decimal | None
+    slope_percent: Decimal | None
+    distance_percent: Decimal | None
+
+
+class AdxIndicatorRead(BaseModel):
+    """Wilder ADX 趋势强度、方向分量及单根变化。"""
+
+    period: int = 14
+    value: Decimal | None
+    plus_di: Decimal | None
+    minus_di: Decimal | None
+    slope: Decimal | None
+
+
+class MacdIndicatorRead(BaseModel):
+    """标准 MACD(12, 26, 9) 最新值。"""
+
+    fast_period: int = 12
+    slow_period: int = 26
+    signal_period: int = 9
+    line: Decimal | None
+    signal: Decimal | None
+    histogram: Decimal | None
+
+
+class AtrIndicatorRead(BaseModel):
+    """Wilder ATR 原始值及相对收盘价百分比。"""
+
+    period: int = 14
+    value: Decimal | None
+    percent: Decimal | None
+
+
+class BollingerIndicatorRead(BaseModel):
+    """布林带(20, 2) 边界、带宽百分比和价格位置。"""
+
+    period: int = 20
+    standard_deviations: Decimal = Decimal("2")
+    upper: Decimal | None
+    middle: Decimal | None
+    lower: Decimal | None
+    bandwidth_percent: Decimal | None
+    percent_b: Decimal | None
+
+
+class TrendIndicatorsRead(BaseModel):
+    """趋势类指标集合，EMA 键为周期字符串。"""
+
+    ema: dict[str, EmaIndicatorRead]
+    ema_alignment: str
+    adx: AdxIndicatorRead
+
+
+class MomentumIndicatorsRead(BaseModel):
+    """动量类指标集合。"""
+
+    rsi14: Decimal | None
+    macd: MacdIndicatorRead
+
+
+class VolatilityIndicatorsRead(BaseModel):
+    """波动率类指标集合。"""
+
+    atr: AtrIndicatorRead
+    bollinger: BollingerIndicatorRead
+
+
+class VolumeIndicatorsRead(BaseModel):
+    """量价类指标集合；OBV 以响应历史窗口首根为零点。"""
+
+    mfi14: Decimal | None
+    obv: Decimal | None
+
+
+class MarketIndicatorsRead(BaseModel):
+    """对外技术指标响应及 Signal 中保存的同口径不可变快照。"""
+
+    symbol: str
+    timeframe: str
+    as_of: datetime
+    source_close: Decimal
+    closed_candles_only: bool = True
+    candle_count: int
+    warmup_complete: bool
+    version: str = "1.0"
+    trend: TrendIndicatorsRead
+    momentum: MomentumIndicatorsRead
+    volatility: VolatilityIndicatorsRead
+    volume: VolumeIndicatorsRead
+
+
 class TickerData(BaseModel):
     """交易池过滤与 Signal 快照使用的 24h ticker。"""
     symbol: str
@@ -160,6 +256,7 @@ class SignalRead(BaseModel):
     adx_slope: Decimal | None
     ema14_slope_percent: Decimal | None
     ema50_slope_percent: Decimal | None
+    technical_indicators: MarketIndicatorsRead | None = None
     oldest_oi: Decimal
     newest_oi: Decimal
     oi_change_absolute: Decimal

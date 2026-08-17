@@ -13,7 +13,11 @@ from app.models import OpenInterestSnapshot, ScannerRun, Signal, SignalFuturePer
 from app.schemas import ConfigValues, KlineData, OIPoint, TickerData
 from app.services.binance.client import BinanceClient
 from app.services.cache.kline_cache import KlineCache, kline_progress, volume_ema
-from app.services.cache.technical_indicators import TechnicalIndicators, calculate_technical_indicators
+from app.services.cache.technical_indicators import (
+    TechnicalIndicators,
+    build_indicator_response,
+    calculate_technical_indicators,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +185,9 @@ class Scanner:
                         adx_slope=indicators.adx_slope,
                         ema14_slope_percent=indicators.ema14_slope_percent,
                         ema50_slope_percent=indicators.ema50_slope_percent,
+                        technical_indicators=build_indicator_response(
+                            symbol, timeframe, indicators
+                        ).model_dump(mode="json"),
                         oldest_oi=oldest.open_interest, newest_oi=newest.open_interest,
                         oi_change_absolute=change, oi_change_percent=change_percent,
                         oi_lookback_minutes=oi_lookback_minutes,

@@ -25,6 +25,80 @@ export interface ActiveSymbol {
   updated_at: string
 }
 
+/** 单个 EMA 的值、单根斜率和相对完整 K 线收盘价距离。 */
+export interface EmaIndicator {
+  period: number
+  value: string | null
+  slope_percent: string | null
+  distance_percent: string | null
+}
+
+/** ADX 趋势强度与正负方向分量。 */
+export interface AdxIndicator {
+  period: number
+  value: string | null
+  plus_di: string | null
+  minus_di: string | null
+  slope: string | null
+}
+
+/** 标准 MACD(12, 26, 9) 最新观察点。 */
+export interface MacdIndicator {
+  fast_period: number
+  slow_period: number
+  signal_period: number
+  line: string | null
+  signal: string | null
+  histogram: string | null
+}
+
+/** ATR 原始值及相对收盘价百分比。 */
+export interface AtrIndicator {
+  period: number
+  value: string | null
+  percent: string | null
+}
+
+/** 布林带边界及标准化带宽、价格位置。 */
+export interface BollingerIndicator {
+  period: number
+  standard_deviations: string
+  upper: string | null
+  middle: string | null
+  lower: string | null
+  bandwidth_percent: string | null
+  percent_b: string | null
+}
+
+/** 分组技术指标接口及 Signal 固化快照。 */
+export interface MarketIndicators {
+  symbol: string
+  timeframe: string
+  as_of: string
+  source_close: string
+  closed_candles_only: boolean
+  candle_count: number
+  warmup_complete: boolean
+  version: string
+  trend: {
+    ema: Record<string, EmaIndicator>
+    ema_alignment: 'bullish' | 'bearish' | 'mixed' | 'insufficient_data'
+    adx: AdxIndicator
+  }
+  momentum: {
+    rsi14: string | null
+    macd: MacdIndicator
+  }
+  volatility: {
+    atr: AtrIndicator
+    bollinger: BollingerIndicator
+  }
+  volume: {
+    mfi14: string | null
+    obv: string | null
+  }
+}
+
 /** 不可变 Signal 市场快照，字段保留检测时刻的原始数值。 */
 export interface SignalSnapshot {
   id: string
@@ -54,6 +128,7 @@ export interface SignalSnapshot {
   adx_slope: string | null
   ema14_slope_percent: string | null
   ema50_slope_percent: string | null
+  technical_indicators: MarketIndicators | null
   oldest_oi: string
   newest_oi: string
   oi_change_absolute: string

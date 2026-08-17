@@ -42,7 +42,7 @@ docker-compose.yml          PostgreSQL、后端、前端编排
 7. `oiChangePercent = (newestOI - oldestOI) / oldestOI × 100`。默认阈值 `0.05` 表示 `0.05%`。
 8. 两项条件同时满足时保存 `VOLUME_OI_ANOMALY` 完整快照，并推送前端；同一 `symbol + timeframe + open_time` 只生成一次。
 
-每个 Signal 还会保存对应周期最近完整 K 线计算出的价格指标：`EMA14`、`EMA50`、Wilder `RSI14`、`ATR14`、`ADX14`，以及相邻观察点的 `ADX` 斜率、`EMA14` 百分比斜率和 `EMA50` 百分比斜率。当前未完成 K 线不参与这些指标，避免后续回测出现指标重绘；EMA 斜率单位为 `%/根`，ADX 斜率单位为 `点/根`。
+每个 Signal 还会保存对应周期最近完整 K 线计算出的版本化技术指标快照。趋势类包括 `EMA9/14/21/50/100/200`、价格距离、百分比斜率、EMA 排列、Wilder `ADX14/+DI14/-DI14`；动量类包括 `RSI14`、`MACD(12,26,9)`；波动率类包括 `ATR14/ATR%`、`Bollinger Bands(20,2)`；量价类包括 `MFI14` 和以当前历史窗口首根为零点的 `OBV`。当前未完成 K 线不参与这些指标，避免后续回测出现指标重绘。
 
 从 `0001` 升级且已有 Signal 时，可在迁移后执行 `python -m scripts.backfill_signal_indicators`，使用数据库中的历史完整 K 线补齐旧快照指标。
 
@@ -72,6 +72,7 @@ docker-compose.yml          PostgreSQL、后端、前端编排
 | `GET` | `/api/markets/active` | 活跃交易池及最近一次 24h 行情快照 |
 | `GET` | `/api/signals` | Signal 分页、搜索、周期筛选和排序 |
 | `GET` | `/api/signals/{id}` | 完整快照及未来表现 |
+| `GET` | `/api/markets/{symbol}/{timeframe}/indicators` | 最新或指定截止时间的结构化技术指标 |
 | `GET` | `/api/config` | 当前动态配置 |
 | `PATCH` | `/api/config` | 修改配置并触发交易池刷新 |
 | `POST` | `/api/scanner/run` | 手动执行扫描 |
@@ -79,11 +80,19 @@ docker-compose.yml          PostgreSQL、后端、前端编排
 
 FastAPI 自动文档位于 `/docs`。
 
+技术指标接口默认返回 `EMA9/14/21/50/100/200`，可通过逗号分隔的 `ema` 参数请求最多 12 个 `2-500` 周期，也可用 ISO 8601 `at` 参数获取不晚于该时间的历史指标：
+
+```text
+GET /api/markets/BTCUSDT/15m/indicators?ema=9,21,50,100,200&at=2026-08-17T08:00:00Z
+```
+
+响应包含 `as_of`、`candle_count`、`closed_candles_only`、`version` 和 `warmup_complete` 等口径元数据。`warmup_complete` 要求历史数量至少达到本次最长 EMA 周期的两倍；数据不足以计算完整基础指标集时返回 `422`。
+
 ## 前端页面
 
 - 运行概览：合约总数、活跃池、WebSocket 状态、最后扫描、耗时、今日 Signal 和最近列表。
 - Signal 监控：交易对搜索、周期筛选、检测时间/Volume Ratio/OI 排序与分页。
-- Signal 详情：K 线、成交量 EMA、OI、24h 行情、触发参数和未来表现完整快照。
+- Signal 详情：K 线、六组价格 EMA、EMA 距离与排列、ADX 方向、ATR%、成交量、OI、24h 行情、触发参数和未来表现完整快照。
 - 参数配置：核心阈值在线校验和修改，保存后动态刷新交易池。
 
 ## 配置参数

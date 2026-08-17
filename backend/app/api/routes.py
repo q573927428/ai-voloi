@@ -16,17 +16,41 @@ from app.schemas import (
     ConfigUpdate,
     ConfigValues,
     DashboardStats,
+    KlineData,
+    MarketIndicatorsRead,
     RealtimeChartData,
     SignalChartCandle,
     SignalChartData,
     SignalPage,
     SignalRead,
 )
-from app.services.cache.technical_indicators import ema_series
+from app.services.cache.technical_indicators import (
+    DEFAULT_EMA_PERIODS,
+    build_indicator_response,
+    calculate_technical_indicators,
+    ema_series,
+)
 from app.services.chart import build_chart_candles
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def parse_ema_periods(value: str) -> tuple[int, ...]:
+    """解析逗号分隔的 EMA 周期，限制数量与范围以控制接口计算成本。"""
+    try:
+        periods = tuple(
+            dict.fromkeys(int(item.strip()) for item in value.split(",") if item.strip())
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="EMA periods must be comma-separated integers") from exc
+    if not periods:
+        raise HTTPException(status_code=422, detail="At least one EMA period is required")
+    if len(periods) > 12:
+        raise HTTPException(status_code=422, detail="At most 12 EMA periods are allowed")
+    if any(period < 2 or period > 500 for period in periods):
+        raise HTTPException(status_code=422, detail="EMA periods must be between 2 and 500")
+    return periods
 
 
 @router.get("/health")
@@ -237,6 +261,64 @@ async def realtime_chart(
         timeframe=timeframe,
         candles=build_chart_candles(visible),
     )
+
+
+@router.get("/markets/{symbol}/{timeframe}/indicators", response_model=MarketIndicatorsRead)
+async def market_indicators(
+    symbol: str,
+    timeframe: str,
+    ema_periods: str = Query(
+        default=",".join(str(period) for period in DEFAULT_EMA_PERIODS),
+        alias="ema",
+        description="Comma-separated EMA periods, each between 2 and 500",
+    ),
+    at: datetime | None = Query(
+        default=None,
+        description="Only use closed candles whose close time is not later than this timestamp",
+    ),
+    session: AsyncSession = Depends(get_db),
+) -> MarketIndicatorsRead:
+    """返回指定市场最新或历史截止时刻的完整技术指标。"""
+    normalized_symbol = symbol.upper()
+    periods = parse_ema_periods(ema_periods)
+    filters = [
+        Kline.symbol == normalized_symbol,
+        Kline.timeframe == timeframe,
+        Kline.is_closed.is_(True),
+    ]
+    if at is not None:
+        filters.append(Kline.close_time <= at)
+    rows = (await session.execute(
+        select(Kline)
+        .where(*filters)
+        .order_by(Kline.open_time.desc())
+        .limit(1000)
+    )).scalars().all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="Market Kline data not found")
+    klines = [
+        KlineData(
+            symbol=row.symbol,
+            timeframe=row.timeframe,
+            open_time=row.open_time,
+            close_time=row.close_time,
+            open=row.open,
+            high=row.high,
+            low=row.low,
+            close=row.close,
+            volume=row.volume,
+            quote_volume=row.quote_volume,
+            is_closed=row.is_closed,
+        )
+        for row in reversed(rows)
+    ]
+    indicators = calculate_technical_indicators(klines, periods)
+    if indicators is None:
+        raise HTTPException(
+            status_code=422,
+            detail="At least 51 closed candles are required for the complete indicator set",
+        )
+    return build_indicator_response(normalized_symbol, timeframe, indicators, periods)
 
 
 @router.get("/config", response_model=ConfigValues)

@@ -5,7 +5,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, utc_now
@@ -88,6 +88,8 @@ class Signal(Base, TimestampMixin):
     adx_slope: Mapped[Decimal | None] = mapped_column(NUM)
     ema14_slope_percent: Mapped[Decimal | None] = mapped_column(NUM)
     ema50_slope_percent: Mapped[Decimal | None] = mapped_column(NUM)
+    # 完整指标采用版本化结构保存，新增指标不再要求持续扩展 Signal 表列。
+    technical_indicators: Mapped[dict | None] = mapped_column(JSONB)
     oldest_oi: Mapped[Decimal] = mapped_column(NUM)
     newest_oi: Mapped[Decimal] = mapped_column(NUM)
     oi_change_absolute: Mapped[Decimal] = mapped_column(NUM)
