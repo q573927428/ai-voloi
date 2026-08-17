@@ -103,18 +103,18 @@ onUnmounted(() => timer && window.clearInterval(timer))
     <div class="table-frame"><SignalTable :rows="signals" :loading="loading" @open="router.push(`/signals/${$event}`)" /></div>
   </section>
 
-  <el-drawer v-model="poolVisible" :title="drawerTitle" size="min(860px, 100%)" destroy-on-close>
+  <el-drawer v-model="poolVisible" :title="drawerTitle" size="min(980px, 100%)" destroy-on-close>
     <div class="pool-toolbar">
       <span>共 {{ marketRows.length }} 个交易对</span>
       <el-input v-model="poolKeyword" :prefix-icon="Search" clearable placeholder="搜索交易对" aria-label="搜索交易对" />
     </div>
     <el-table v-loading="poolLoading" :data="filteredMarkets" height="calc(100vh - 170px)" stripe :empty-text="marketMode === 'all' ? '暂无永续合约' : '暂无活跃交易对'">
-      <el-table-column prop="symbol" label="交易对" min-width="190" fixed="left"><template #default="{ row }"><MarketSymbol :symbol="row.symbol" :is-tradfi="row.contract_type === 'TRADIFI_PERPETUAL'" /></template></el-table-column>
-      <el-table-column prop="base_asset" label="基础资产" min-width="100" />
-      <el-table-column v-if="marketMode === 'all'" label="活跃状态" min-width="100"><template #default="{ row }"><el-tag :type="row.is_active ? 'success' : 'info'" effect="plain" size="small">{{ row.is_active ? '已加入' : '未加入' }}</el-tag></template></el-table-column>
-      <el-table-column label="最新价" min-width="140" align="right"><template #default="{ row }"><span class="number">{{ price(row.last_price) }}</span></template></el-table-column>
+      <el-table-column prop="symbol" label="交易对" min-width="160" fixed="left"><template #default="{ row }"><MarketSymbol :symbol="row.symbol" :is-tradfi="row.contract_type === 'TRADIFI_PERPETUAL'" /></template></el-table-column>
+      <el-table-column prop="base_asset" label="基础资产" min-width="90" />
+      <el-table-column v-if="marketMode === 'all'" label="活跃状态" width="80"><template #default="{ row }"><el-tag :type="row.is_active ? 'success' : 'info'" effect="plain" size="small">{{ row.is_active ? '已加入' : '未加入' }}</el-tag></template></el-table-column>
+      <el-table-column label="最新价" min-width="100" align="right"><template #default="{ row }"><span class="number">{{ price(row.last_price) }}</span></template></el-table-column>
       <el-table-column label="24h 涨跌" min-width="110" align="right"><template #default="{ row }"><span :class="Number(row.price_change_percent_24h) >= 0 ? 'positive' : 'negative'">{{ row.price_change_percent_24h === null ? '—' : `${Number(row.price_change_percent_24h) >= 0 ? '+' : ''}${Number(row.price_change_percent_24h).toFixed(2)}%` }}</span></template></el-table-column>
-      <el-table-column label="24h 成交额" min-width="130" align="right"><template #default="{ row }"><span class="number">{{ compact(row.quote_volume_24h) }} {{ row.quote_asset }}</span></template></el-table-column>
+      <el-table-column label="24h 成交额" min-width="110" align="right"><template #default="{ row }"><span class="number">{{ compact(row.quote_volume_24h) }} </span></template></el-table-column>
       <el-table-column label="快照时间" min-width="170"><template #default="{ row }">{{ snapshotTime(row.updated_at) }}</template></el-table-column>
     </el-table>
   </el-drawer>

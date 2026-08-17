@@ -10,11 +10,13 @@ import {
   createSeriesMarkers,
   type IChartApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
 import { api, errorMessage } from '../api/client'
 import type { RealtimeKlineMessage, SignalChartCandle, SignalChartData } from '../types'
+import { resolvePricePrecision } from '../utils/price'
 
 /** 图表定位所需的 Signal 标识与可见标题。 */
 const props = defineProps<{ signalId: string; symbol: string; timeframe: string }>()
@@ -27,6 +29,8 @@ const latestCandle = ref<SignalChartCandle | null>(null)
 const latestPriceDirection = ref<'up' | 'down' | 'flat'>('flat')
 const mode = ref<'snapshot' | 'realtime'>('realtime')
 const liveConnected = ref(false)
+const selectedTimeframe = ref(props.timeframe)
+const timeframeOptions = ref<string[]>([props.timeframe])
 const DEFAULT_VISIBLE_CANDLES = 300
 const RIGHT_EMPTY_CANDLES = 20
 let chart: IChartApi | null = null
@@ -34,12 +38,14 @@ let candleSeries: ISeriesApi<'Candlestick'> | null = null
 let ema14Series: ISeriesApi<'Line'> | null = null
 let ema50Series: ISeriesApi<'Line'> | null = null
 let volumeSeries: ISeriesApi<'Histogram'> | null = null
+let signalMarkers: ISeriesMarkersPluginApi<Time> | null = null
 let resizeObserver: ResizeObserver | null = null
 let snapshotData: SignalChartData | null = null
 let liveSocket: WebSocket | null = null
 let reconnectTimer: number | undefined
 let lastRealtimeCandleTime: number | null = null
 let currentPricePrecision: number | null = null
+let realtimeRequestId = 0
 let disposed = false
 
 const modeOptions = [
@@ -99,18 +105,18 @@ function formatMarketVolume(value?: string): string {
     : '—'
 }
 
+/** 格式化 Signal 快照价格，去除数据库小数末尾的无效零。 */
+function formatSignalPrice(value: string): string {
+  const number = Number(value)
+  return Number.isFinite(number)
+    ? number.toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: 12 })
+    : value
+}
+
 /** 计算当前 K 线相对开盘价的涨跌幅。 */
 function candleChangePercent(candle: SignalChartCandle | null): number {
   if (!candle || Number(candle.open) === 0) return 0
   return (Number(candle.close) - Number(candle.open)) / Number(candle.open) * 100
-}
-
-/** 根据价格数量级动态调整精度；个位价格至少保留三位小数，避免行情细微变化被隐藏。 */
-function resolvePricePrecision(price: number): number {
-  if (!Number.isFinite(price) || price === 0) return 2
-  const absolutePrice = Math.abs(price)
-  const minimumPrecision = absolutePrice < 10 ? 3 : 2
-  return Math.min(12, Math.max(minimumPrecision, 2 - Math.floor(Math.log10(absolutePrice))))
 }
 
 /** 为蜡烛和双 EMA 同步应用动态价格精度。 */
@@ -122,6 +128,42 @@ function applyPricePrecision(price: number) {
   candleSeries?.applyOptions({ priceFormat })
   ema14Series?.applyOptions({ priceFormat })
   ema50Series?.applyOptions({ priceFormat })
+}
+
+/** 将 Binance 周期转换为秒，用于判断 Signal 时刻实际归属哪根 K 线。 */
+function timeframeSeconds(timeframe: string): number | null {
+  const match = /^(\d+)([mhdw])$/.exec(timeframe)
+  if (!match) return null
+  const unit = match[2] as 'm' | 'h' | 'd' | 'w'
+  const unitSeconds = { m: 60, h: 3600, d: 86400, w: 604800 }[unit]
+  return Number(match[1]) * unitSeconds
+}
+
+/**
+ * 将 Signal 标记绑定到当前周期中实际包含检测时刻的蜡烛。
+ * 当前窗口缺失目标蜡烛时主动隐藏标记，避免标到相邻但不对应的 K 线上。
+ */
+function updateSignalMarker(items: SignalChartCandle[]) {
+  if (!signalMarkers || !snapshotData) return
+  const signalCandle = snapshotData.candles.find((item) => item.is_signal)
+  const duration = timeframeSeconds(selectedTimeframe.value)
+  if (!signalCandle || duration == null) {
+    signalMarkers.setMarkers([])
+    return
+  }
+  const containingCandle = items.find((item) => (
+    item.time <= snapshotData!.signal_time && snapshotData!.signal_time < item.time + duration
+  ))
+  if (!containingCandle) {
+    signalMarkers.setMarkers([])
+    return
+  }
+  signalMarkers.setMarkers([{
+    time: containingCandle.time as UTCTimestamp,
+    // Signal 价格来自不可变快照，横坐标则跟随当前周期所归属的蜡烛。
+    position: 'atPriceTop', price: Number(signalCandle.close),
+    shape: 'arrowDown', color: '#d39b24', text: `Signal @${formatSignalPrice(signalCandle.close)}`,
+  }])
 }
 
 /** 将完整窗口写入全部图表序列，并恢复默认观察范围。 */
@@ -145,6 +187,7 @@ function setChartCandles(items: SignalChartCandle[]) {
     value: Number(item.volume),
     color: Number(item.close) >= Number(item.open) ? 'rgba(20,128,94,.35)' : 'rgba(197,77,74,.35)',
   })))
+  updateSignalMarker(items)
   updateLegend(latest)
   lastRealtimeCandleTime = latest?.time ?? null
   const lastLogicalIndex = items.length - 1
@@ -200,7 +243,7 @@ function connectRealtime() {
   const base = import.meta.env.DEV
     ? `${protocol}://${location.hostname}:8000/api`
     : `${protocol}://${location.host}/api`
-  const socket = new WebSocket(`${base}/ws/klines/${encodeURIComponent(props.symbol)}/${encodeURIComponent(props.timeframe)}`)
+  const socket = new WebSocket(`${base}/ws/klines/${encodeURIComponent(props.symbol)}/${encodeURIComponent(selectedTimeframe.value)}`)
   liveSocket = socket
   socket.onopen = () => {
     liveConnected.value = true
@@ -221,17 +264,33 @@ function connectRealtime() {
 
 /** 获取实时市场窗口，再建立对应交易对和周期的增量订阅。 */
 async function loadRealtime() {
+  const requestId = ++realtimeRequestId
+  const timeframe = selectedTimeframe.value
+  // 周期变化后先断开旧订阅，避免旧周期的增量数据混入新图表。
+  closeRealtime()
   loading.value = true
   error.value = ''
   try {
-    const data = await api.realtimeChart(props.symbol, props.timeframe)
-    if (mode.value !== 'realtime') return
+    const data = await api.realtimeChart(props.symbol, timeframe)
+    if (requestId !== realtimeRequestId || mode.value !== 'realtime' || timeframe !== selectedTimeframe.value) return
     setChartCandles(data.candles)
     connectRealtime()
   } catch (reason) {
-    error.value = errorMessage(reason)
+    if (requestId === realtimeRequestId) error.value = errorMessage(reason)
   } finally {
-    loading.value = false
+    if (requestId === realtimeRequestId) loading.value = false
+  }
+}
+
+/** 读取运行中的监控周期，确保切换项与后端实时行情能力保持一致。 */
+async function loadTimeframeOptions() {
+  try {
+    const config = await api.config()
+    // 保持系统配置中的周期顺序；Signal 自身周期仅在配置已移除它时补到末尾。
+    timeframeOptions.value = Array.from(new Set([...config.timeframes, props.timeframe]))
+  } catch {
+    // 配置接口异常不影响图表主流程，至少保留 Signal 自身周期可用。
+    timeframeOptions.value = [props.timeframe]
   }
 }
 
@@ -267,13 +326,20 @@ async function renderChart() {
     ema50Series = chart.addSeries(LineSeries, { color: '#d97706', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'EMA50' })
     volumeSeries = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceScaleId: '', priceLineVisible: false, lastValueVisible: false })
     volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
-    const signalCandle = data.candles[data.candles.length - 1]
-    createSeriesMarkers(candleSeries, [{
-      time: data.signal_open_time as UTCTimestamp,
-      // 实时模式中的完整 K 线可能继续变化，Signal 必须固定在检测价格而不是最终最高价。
-      position: 'atPriceTop', price: Number(signalCandle.close),
-      shape: 'arrowDown', color: '#d39b24', text: 'Signal',
-    }])
+    const signalCandle = data.candles.find((item) => item.is_signal)
+    if (signalCandle) {
+      // 只在 Y 轴标出不可变的 Signal 快照价，不绘制横线以免遮挡 K 线。
+      candleSeries.createPriceLine({
+        price: Number(signalCandle.close),
+        color: '#d39b24',
+        lineVisible: false,
+        axisLabelVisible: true,
+        axisLabelColor: '#d39b24',
+        axisLabelTextColor: '#ffffff',
+        title: 'Signal',
+      })
+    }
+    signalMarkers = createSeriesMarkers(candleSeries, [])
     setChartCandles(data.candles)
     // 移动端断点会同时改变容器宽高，图表必须同步两者，避免内部 Canvas 保留桌面高度。
     resizeObserver = new ResizeObserver(([entry]) => chart?.applyOptions({
@@ -289,15 +355,31 @@ async function renderChart() {
   }
 }
 
-onMounted(renderChart)
+onMounted(() => {
+  void loadTimeframeOptions()
+  void renderChart()
+})
 watch(mode, (value) => {
   if (!chart) return
   if (value === 'realtime') void loadRealtime()
   else {
+    realtimeRequestId += 1
     closeRealtime()
     error.value = ''
+    // 检测快照只对 Signal 原始周期有不可变的盘中数据，切回快照时同步恢复该周期。
+    selectedTimeframe.value = props.timeframe
     if (snapshotData) setChartCandles(snapshotData.candles)
+    loading.value = false
   }
+})
+watch(selectedTimeframe, (value) => {
+  if (!chart) return
+  // 选择其他周期代表查看当前市场行情；快照模式没有其他周期的盘中不可变数据。
+  if (mode.value === 'snapshot' && value !== props.timeframe) {
+    mode.value = 'realtime'
+    return
+  }
+  if (mode.value === 'realtime') void loadRealtime()
 })
 onUnmounted(() => {
   disposed = true
@@ -311,7 +393,7 @@ onUnmounted(() => {
   <section class="chart-band">
     <div class="chart-head">
       <div class="chart-primary">
-        <div class="chart-copy"><h2>{{ symbol }} · {{ timeframe }}</h2><span>{{ mode === 'realtime' ? '实时行情' : '检测时刻快照' }} · UTC+8</span></div>
+        <div class="chart-copy"><h2>{{ symbol }} · {{ selectedTimeframe }}</h2><span>{{ mode === 'realtime' ? '实时行情' : '检测时刻快照' }} · UTC+8</span></div>
         <div v-if="latestCandle" class="market-strip">
           <div class="market-item latest"><span>最新价格</span><strong :class="latestPriceDirection">{{ formatMarketPrice(latestCandle.close) }}</strong></div>
           <div class="market-item"><span>变化</span><strong :class="candleChangePercent(latestCandle) >= 0 ? 'up' : 'down'">{{ candleChangePercent(latestCandle) >= 0 ? '+' : '' }}{{ candleChangePercent(latestCandle).toFixed(2) }}%</strong></div>
@@ -325,6 +407,7 @@ onUnmounted(() => {
       <div class="chart-tools">
         <div class="chart-legend"><span><i class="ema14" />EMA14 {{ ema14 }}</span><span><i class="ema50" />EMA50 {{ ema50 }}</span></div>
         <div class="mode-control">
+          <el-segmented v-model="selectedTimeframe" :options="timeframeOptions" size="small" aria-label="K 线周期" />
           <span v-if="mode === 'realtime'" :class="['live-state', { connected: liveConnected }]">{{ liveConnected ? '已连接' : '连接中' }}</span>
           <el-segmented v-model="mode" :options="modeOptions" size="small" />
         </div>
@@ -356,7 +439,7 @@ onUnmounted(() => {
 .chart-legend i { display: inline-block; width: 16px; height: 3px; margin-right: 7px; vertical-align: middle; }
 .chart-legend i.ema14 { background: #2563eb; }
 .chart-legend i.ema50 { background: #d97706; }
-.mode-control { display: flex; align-items: center; gap: 9px; }
+.mode-control { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 9px; }
 .live-state { color: #8a6570; font-size: 11px; white-space: nowrap; }
 .live-state::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #b8c0c9; vertical-align: 1px; }
 .live-state.connected { color: #27755e; }
@@ -369,7 +452,7 @@ onUnmounted(() => {
   .chart-primary { width: 100%; align-items: flex-start; flex-direction: column; gap: 8px; }
   .chart-tools { width: 100%; align-items: flex-start; flex-direction: column; gap: 8px; }
   .market-strip { gap: 8px 14px; }
-  .mode-control { width: 100%; justify-content: space-between; }
+  .mode-control { width: 100%; justify-content: flex-start; }
   .chart-canvas { height: 430px; }
   .chart-legend { gap: 10px; }
 }
