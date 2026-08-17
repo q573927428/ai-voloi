@@ -284,7 +284,11 @@ class MonitorRuntime:
             current, closed = await self.cache.snapshot(kline.symbol, kline.timeframe)
             visible = [*closed, *([current] if current else [])]
             candles = build_chart_candles(visible)
-            if candles and candles[-1].ema14 is not None and candles[-1].ema50 is not None:
+            if (
+                candles
+                and candles[-1].emas.get(14) is not None
+                and candles[-1].emas.get(50) is not None
+            ):
                 # 启动早期历史缓存尚未装满时，不用空 EMA 覆盖前端已有完整窗口。
                 await self.kline_broadcaster.publish(kline.symbol, kline.timeframe, candles[-1])
 

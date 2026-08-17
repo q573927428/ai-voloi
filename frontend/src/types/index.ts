@@ -143,7 +143,7 @@ export interface SignalSnapshot {
   future_performance?: Record<string, string | null> | null
 }
 
-/** TradingView 图表中的 K 线和双 EMA 数据点。 */
+/** TradingView 图表中的 K 线和六组可选 EMA 数据点。 */
 export interface SignalChartCandle {
   time: number
   open: string
@@ -151,8 +151,7 @@ export interface SignalChartCandle {
   low: string
   close: string
   volume: string
-  ema14: string | null
-  ema50: string | null
+  emas: Record<string, string | null>
   is_signal: boolean
 }
 

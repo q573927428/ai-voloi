@@ -28,9 +28,8 @@ from app.services.cache.technical_indicators import (
     DEFAULT_EMA_PERIODS,
     build_indicator_response,
     calculate_technical_indicators,
-    ema_series,
 )
-from app.services.chart import build_chart_candles
+from app.services.chart import build_chart_candles, latest_ema_values
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -183,24 +182,11 @@ async def signal_chart(
         .limit(history_limit)
     )).scalars().all()
     rows = list(reversed(rows))
-    closes = [row.close for row in rows]
-    ema14_values = ema_series(closes, 14)
-    ema50_values = ema_series(closes, 50)
-    candles: list[SignalChartCandle] = []
-    for index, row in enumerate(rows):
-        ema14_index = index - 13
-        ema50_index = index - 49
-        candles.append(SignalChartCandle(
-            time=int(row.open_time.timestamp()),
-            open=row.open,
-            high=row.high,
-            low=row.low,
-            close=row.close,
-            volume=row.volume,
-            ema14=ema14_values[ema14_index] if ema14_index >= 0 else None,
-            ema50=ema50_values[ema50_index] if ema50_index >= 0 else None,
-        ))
-    # 当前未完成 K 线使用 Signal 原始快照，EMA 使用检测时已保存值，保持回测口径一致。
+    candles = build_chart_candles(rows)
+    current_emas = latest_ema_values([*[row.close for row in rows], signal.current_price])
+    # 当前未完成 K 线按 Signal 当时价格计算；历史固化的 EMA14/EMA50 优先保持原始口径。
+    current_emas[14] = signal.ema14
+    current_emas[50] = signal.ema50
     candles.append(SignalChartCandle(
         time=int(signal.open_time.timestamp()),
         open=signal.open,
@@ -208,8 +194,7 @@ async def signal_chart(
         low=signal.low,
         close=signal.current_price,
         volume=signal.current_volume,
-        ema14=signal.ema14,
-        ema50=signal.ema50,
+        emas=current_emas,
         is_signal=True,
     ))
     return SignalChartData(

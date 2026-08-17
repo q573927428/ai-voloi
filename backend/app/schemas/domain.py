@@ -279,15 +279,14 @@ class SignalPage(BaseModel):
 
 
 class SignalChartCandle(BaseModel):
-    """TradingView 图表使用的单根 K 线及对应 EMA 值。"""
+    """TradingView 图表使用的单根 K 线及可选周期 EMA 值。"""
     time: int
     open: Decimal
     high: Decimal
     low: Decimal
     close: Decimal
     volume: Decimal
-    ema14: Decimal | None = None
-    ema50: Decimal | None = None
+    emas: dict[int, Decimal | None] = Field(default_factory=dict)
     is_signal: bool = False
 
 

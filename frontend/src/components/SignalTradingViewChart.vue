@@ -24,8 +24,12 @@ const props = defineProps<{ signalId: string; symbol: string; timeframe: string 
 const container = ref<HTMLDivElement | null>(null)
 const loading = ref(true)
 const error = ref('')
-const ema14 = ref('—')
-const ema50 = ref('—')
+const EMA_PERIODS = [9, 14, 21, 50, 100, 200] as const
+type EmaPeriod = typeof EMA_PERIODS[number]
+const primaryEmaPeriod = ref<EmaPeriod>(14)
+const secondaryEmaPeriod = ref<EmaPeriod>(50)
+const primaryEmaValue = ref('—')
+const secondaryEmaValue = ref('—')
 const latestCandle = ref<SignalChartCandle | null>(null)
 const latestPriceDirection = ref<'up' | 'down' | 'flat'>('flat')
 const mode = ref<'snapshot' | 'realtime'>('realtime')
@@ -36,8 +40,8 @@ const DEFAULT_VISIBLE_CANDLES = 300
 const RIGHT_EMPTY_CANDLES = 20
 let chart: IChartApi | null = null
 let candleSeries: ISeriesApi<'Candlestick'> | null = null
-let ema14Series: ISeriesApi<'Line'> | null = null
-let ema50Series: ISeriesApi<'Line'> | null = null
+let primaryEmaSeries: ISeriesApi<'Line'> | null = null
+let secondaryEmaSeries: ISeriesApi<'Line'> | null = null
 let volumeSeries: ISeriesApi<'Histogram'> | null = null
 let signalMarkers: ISeriesMarkersPluginApi<Time> | null = null
 let resizeObserver: ResizeObserver | null = null
@@ -48,6 +52,7 @@ let lastRealtimeCandleTime: number | null = null
 let currentPricePrecision: number | null = null
 let realtimeRequestId = 0
 let disposed = false
+let visibleCandles: SignalChartCandle[] = []
 
 const modeOptions = [
   { label: '检测快照', value: 'snapshot' },
@@ -79,10 +84,18 @@ function formatUtc8Tick(time: Time, tickMarkType: number): string {
   return new Intl.DateTimeFormat('zh-CN', options).format(timeToMilliseconds(time))
 }
 
-/** 更新标题图例中的最新 EMA 值。 */
+/** 读取指定周期 EMA，兼容 JSON 将数字键序列化为字符串的规则。 */
+function emaValue(candle: SignalChartCandle | undefined, period: EmaPeriod): string | null {
+  return candle?.emas[String(period)] ?? null
+}
+
+/** 格式化并更新标题图例中的两组当前 EMA 值。 */
 function updateLegend(candle?: SignalChartCandle) {
-  ema14.value = candle?.ema14 == null ? '—' : Number(candle.ema14).toLocaleString('zh-CN', { maximumFractionDigits: 8 })
-  ema50.value = candle?.ema50 == null ? '—' : Number(candle.ema50).toLocaleString('zh-CN', { maximumFractionDigits: 8 })
+  const format = (value: string | null) => value == null
+    ? '—'
+    : Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 8 })
+  primaryEmaValue.value = format(emaValue(candle, primaryEmaPeriod.value))
+  secondaryEmaValue.value = format(emaValue(candle, secondaryEmaPeriod.value))
 }
 
 /** 按图表当前动态精度格式化行情价格。 */
@@ -120,15 +133,30 @@ function candleChangePercent(candle: SignalChartCandle | null): number {
   return (Number(candle.close) - Number(candle.open)) / Number(candle.open) * 100
 }
 
-/** 为蜡烛和双 EMA 同步应用动态价格精度。 */
+/** 为蜡烛和两条可选 EMA 同步应用动态价格精度。 */
 function applyPricePrecision(price: number) {
   const precision = resolvePricePrecision(price)
   if (precision === currentPricePrecision) return
   currentPricePrecision = precision
   const priceFormat = { type: 'price' as const, precision, minMove: 10 ** -precision }
   candleSeries?.applyOptions({ priceFormat })
-  ema14Series?.applyOptions({ priceFormat })
-  ema50Series?.applyOptions({ priceFormat })
+  primaryEmaSeries?.applyOptions({ priceFormat })
+  secondaryEmaSeries?.applyOptions({ priceFormat })
+}
+
+/** 按当前手动选择的周期重绘两条 EMA，不重新请求行情数据。 */
+function refreshEmaSeries() {
+  const toSeriesData = (period: EmaPeriod) => visibleCandles
+    .filter((item) => emaValue(item, period) != null)
+    .map((item) => ({
+      time: item.time as UTCTimestamp,
+      value: Number(emaValue(item, period)),
+    }))
+  primaryEmaSeries?.applyOptions({ title: `EMA${primaryEmaPeriod.value}` })
+  secondaryEmaSeries?.applyOptions({ title: `EMA${secondaryEmaPeriod.value}` })
+  primaryEmaSeries?.setData(toSeriesData(primaryEmaPeriod.value))
+  secondaryEmaSeries?.setData(toSeriesData(secondaryEmaPeriod.value))
+  updateLegend(visibleCandles[visibleCandles.length - 1])
 }
 
 /** 将 Binance 周期转换为秒，用于判断 Signal 时刻实际归属哪根 K 线。 */
@@ -169,6 +197,7 @@ function updateSignalMarker(items: SignalChartCandle[]) {
 
 /** 将完整窗口写入全部图表序列，并恢复默认观察范围。 */
 function setChartCandles(items: SignalChartCandle[]) {
+  visibleCandles = items
   const latest = items[items.length - 1]
   if (latest) applyPricePrecision(Number(latest.close))
   latestPriceDirection.value = 'flat'
@@ -177,19 +206,13 @@ function setChartCandles(items: SignalChartCandle[]) {
     time: item.time as UTCTimestamp,
     open: Number(item.open), high: Number(item.high), low: Number(item.low), close: Number(item.close),
   })))
-  ema14Series?.setData(items.filter((item) => item.ema14 != null).map((item) => ({
-    time: item.time as UTCTimestamp, value: Number(item.ema14),
-  })))
-  ema50Series?.setData(items.filter((item) => item.ema50 != null).map((item) => ({
-    time: item.time as UTCTimestamp, value: Number(item.ema50),
-  })))
+  refreshEmaSeries()
   volumeSeries?.setData(items.map((item) => ({
     time: item.time as UTCTimestamp,
     value: Number(item.volume),
     color: Number(item.close) >= Number(item.open) ? 'rgba(20,128,94,.35)' : 'rgba(197,77,74,.35)',
   })))
   updateSignalMarker(items)
-  updateLegend(latest)
   lastRealtimeCandleTime = latest?.time ?? null
   const lastLogicalIndex = items.length - 1
   if (lastLogicalIndex >= 0) {
@@ -200,7 +223,7 @@ function setChartCandles(items: SignalChartCandle[]) {
   }
 }
 
-/** 将 WebSocket 增量同步到蜡烛、成交量和双 EMA 序列。 */
+/** 将 WebSocket 增量同步到蜡烛、成交量和当前选择的两条 EMA 序列。 */
 function updateRealtimeCandle(item: SignalChartCandle) {
   const isNewCandle = lastRealtimeCandleTime !== item.time
   const time = item.time as UTCTimestamp
@@ -210,6 +233,8 @@ function updateRealtimeCandle(item: SignalChartCandle) {
   else if (Number.isFinite(previousPrice) && currentPrice < previousPrice) latestPriceDirection.value = 'down'
   applyPricePrecision(Number(item.close))
   latestCandle.value = item
+  if (isNewCandle) visibleCandles.push(item)
+  else if (visibleCandles.length) visibleCandles[visibleCandles.length - 1] = item
   candleSeries?.update({
     time, open: Number(item.open), high: Number(item.high), low: Number(item.low), close: Number(item.close),
   })
@@ -217,8 +242,10 @@ function updateRealtimeCandle(item: SignalChartCandle) {
     time, value: Number(item.volume),
     color: Number(item.close) >= Number(item.open) ? 'rgba(20,128,94,.35)' : 'rgba(197,77,74,.35)',
   })
-  if (item.ema14 != null) ema14Series?.update({ time, value: Number(item.ema14) })
-  if (item.ema50 != null) ema50Series?.update({ time, value: Number(item.ema50) })
+  const primaryValue = emaValue(item, primaryEmaPeriod.value)
+  const secondaryValue = emaValue(item, secondaryEmaPeriod.value)
+  if (primaryValue != null) primaryEmaSeries?.update({ time, value: Number(primaryValue) })
+  if (secondaryValue != null) secondaryEmaSeries?.update({ time, value: Number(secondaryValue) })
   updateLegend(item)
   lastRealtimeCandleTime = item.time
   if (isNewCandle) chart?.timeScale().scrollToRealTime()
@@ -323,8 +350,8 @@ async function renderChart() {
       upColor: '#14805e', downColor: '#c54d4a', borderVisible: false,
       wickUpColor: '#14805e', wickDownColor: '#c54d4a',
     })
-    ema14Series = chart.addSeries(LineSeries, { color: '#2563eb', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'EMA14' })
-    ema50Series = chart.addSeries(LineSeries, { color: '#d97706', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'EMA50' })
+    primaryEmaSeries = chart.addSeries(LineSeries, { color: '#2563eb', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'EMA14' })
+    secondaryEmaSeries = chart.addSeries(LineSeries, { color: '#d97706', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'EMA50' })
     volumeSeries = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceScaleId: '', priceLineVisible: false, lastValueVisible: false })
     volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
     const signalCandle = data.candles.find((item) => item.is_signal)
@@ -382,6 +409,7 @@ watch(selectedTimeframe, (value) => {
   }
   if (mode.value === 'realtime') void loadRealtime()
 })
+watch([primaryEmaPeriod, secondaryEmaPeriod], refreshEmaSeries)
 onUnmounted(() => {
   disposed = true
   closeRealtime()
@@ -406,7 +434,28 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="chart-tools">
-        <div class="chart-legend"><span><i class="ema14" />EMA14 {{ ema14 }}</span><span><i class="ema50" />EMA50 {{ ema50 }}</span></div>
+        <div class="chart-legend">
+          <label class="ema-control">
+            <i class="ema-primary" />
+            <el-select v-model="primaryEmaPeriod" size="small" aria-label="第一条 EMA 周期">
+              <el-option
+                v-for="period in EMA_PERIODS" :key="period" :label="`EMA${period}`"
+                :value="period" :disabled="period === secondaryEmaPeriod"
+              />
+            </el-select>
+            <span>{{ primaryEmaValue }}</span>
+          </label>
+          <label class="ema-control">
+            <i class="ema-secondary" />
+            <el-select v-model="secondaryEmaPeriod" size="small" aria-label="第二条 EMA 周期">
+              <el-option
+                v-for="period in EMA_PERIODS" :key="period" :label="`EMA${period}`"
+                :value="period" :disabled="period === primaryEmaPeriod"
+              />
+            </el-select>
+            <span>{{ secondaryEmaValue }}</span>
+          </label>
+        </div>
         <div class="mode-control">
           <el-segmented v-model="selectedTimeframe" :options="timeframeOptions" size="small" aria-label="K 线周期" />
           <span v-if="mode === 'realtime'" :class="['live-state', { connected: liveConnected }]">{{ liveConnected ? '已连接' : '连接中' }}</span>
@@ -436,10 +485,12 @@ onUnmounted(() => {
 .market-item strong.up { color: #14805e; }
 .market-item strong.down { color: #c54d4a; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 18px; font-variant-numeric: tabular-nums; }
-.chart-legend span { color: #4d5967; font-size: 12px; }
+.ema-control { display: flex; align-items: center; gap: 7px; color: #4d5967; font-size: 12px; }
+.ema-control :deep(.el-select) { width: 86px; }
+.ema-control > span { min-width: 70px; font-variant-numeric: tabular-nums; }
 .chart-legend i { display: inline-block; width: 16px; height: 3px; margin-right: 7px; vertical-align: middle; }
-.chart-legend i.ema14 { background: #2563eb; }
-.chart-legend i.ema50 { background: #d97706; }
+.chart-legend i.ema-primary { background: #2563eb; }
+.chart-legend i.ema-secondary { background: #d97706; }
 .mode-control { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 9px; }
 .live-state { color: #8a6570; font-size: 11px; white-space: nowrap; }
 .live-state::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #b8c0c9; vertical-align: 1px; }

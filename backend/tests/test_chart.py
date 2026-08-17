@@ -50,14 +50,14 @@ def make_chart_klines(count: int = 60) -> list[KlineData]:
     ]
 
 
-def test_build_chart_candles_contains_incremental_ema_values() -> None:
-    candles = build_chart_candles(list(reversed(make_chart_klines())))
+def test_build_chart_candles_contains_all_selectable_ema_values() -> None:
+    candles = build_chart_candles(list(reversed(make_chart_klines(220))))
 
-    assert len(candles) == 60
-    assert candles[12].ema14 is None
-    assert candles[13].ema14 is not None
-    assert candles[48].ema50 is None
-    assert candles[49].ema50 is not None
+    assert len(candles) == 220
+    for period in (9, 14, 21, 50, 100, 200):
+        assert period in candles[-1].emas
+        assert candles[period - 2].emas[period] is None
+        assert candles[period - 1].emas[period] is not None
     assert candles[-1].time > candles[0].time
 
 
@@ -66,7 +66,7 @@ async def test_kline_broadcaster_only_publishes_to_matching_market() -> None:
     broadcaster = KlineBroadcaster()
     matching = FakeWebSocket()
     other = FakeWebSocket()
-    candle = build_chart_candles(make_chart_klines())[-1]
+    candle = build_chart_candles(make_chart_klines(220))[-1]
     await broadcaster.connect(matching, "BTCUSDT", "15m")
     await broadcaster.connect(other, "ETHUSDT", "15m")
 
@@ -74,5 +74,8 @@ async def test_kline_broadcaster_only_publishes_to_matching_market() -> None:
 
     assert matching.accepted is True
     assert matching.messages[0]["type"] == "kline"
-    assert matching.messages[0]["data"]["ema14"] is not None
+    assert all(
+        matching.messages[0]["data"]["emas"][str(period)] is not None
+        for period in (9, 14, 21, 50, 100, 200)
+    )
     assert other.messages == []
