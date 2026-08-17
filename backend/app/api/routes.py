@@ -1,7 +1,7 @@
 """HTTP 与 WebSocket API 路由。"""
 
 import logging
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
@@ -34,6 +34,17 @@ from app.services.chart import build_chart_candles, latest_ema_values
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+UTC_PLUS_8 = timezone(timedelta(hours=8))
+
+
+def utc_plus_8_day_range(now: datetime | None = None) -> tuple[datetime, datetime]:
+    """返回当前 UTC+8 自然日在 UTC 中的左闭右开时间范围。"""
+    current = now or datetime.now(timezone.utc)
+    local_date = current.astimezone(UTC_PLUS_8).date()
+    local_start = datetime.combine(local_date, time.min, tzinfo=UTC_PLUS_8)
+    # 数据库存储 UTC，查询边界也转换为 UTC，避免改变全局时间存储约定。
+    start = local_start.astimezone(timezone.utc)
+    return start, start + timedelta(days=1)
 
 
 def parse_ema_periods(value: str) -> tuple[int, ...]:
@@ -66,8 +77,13 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_db)) -
     total = await session.scalar(select(func.count()).select_from(Symbol)) or 0
     active = await session.scalar(select(func.count()).select_from(Symbol).where(Symbol.is_active)) or 0
     last_run = (await session.execute(select(ScannerRun).order_by(ScannerRun.started_at.desc()).limit(1))).scalar_one_or_none()
-    day_start = datetime.combine(datetime.now(timezone.utc).date(), time.min, tzinfo=timezone.utc)
-    today = await session.scalar(select(func.count()).select_from(Signal).where(Signal.detected_at >= day_start)) or 0
+    day_start, day_end = utc_plus_8_day_range()
+    today = await session.scalar(
+        select(func.count()).select_from(Signal).where(
+            Signal.detected_at >= day_start,
+            Signal.detected_at < day_end,
+        )
+    ) or 0
     return DashboardStats(
         total_symbols=total, active_symbols=active,
         websocket_status=request.app.state.runtime.websocket.status,

@@ -67,7 +67,7 @@ onUnmounted(() => timer && window.clearInterval(timer))
     <div class="metric"><p class="metric-label">WebSocket</p><p class="metric-value metric-ws"><span class="status-dot" :class="{ online: stats?.websocket_status === 'connected' }"></span>{{ stats?.websocket_status ?? '—' }}</p><div class="metric-note">实时 K 线维护状态</div></div>
     <div class="metric"><p class="metric-label">最后扫描</p><p class="metric-value">{{ stats?.last_scan_at ? new Date(stats.last_scan_at).toLocaleTimeString('zh-CN', { hour12: false }) : '—' }}</p><div class="metric-note">严格对齐扫描边界</div></div>
     <div class="metric"><p class="metric-label">扫描耗时</p><p class="metric-value">{{ stats?.last_scan_duration_ms ?? '—' }}<small v-if="stats?.last_scan_duration_ms"> ms</small></p><div class="metric-foot"><span class="metric-note">最近一次完整扫描</span><el-button size="small" :icon="Refresh" :loading="loading" :disabled="loading" @click="load">刷新</el-button></div></div>
-    <div class="metric"><p class="metric-label">今日 Signal</p><p class="metric-value">{{ stats?.today_signal_count ?? '—' }}</p><div class="metric-foot"><span class="metric-note">UTC 自然日累计</span><el-button size="small" type="primary" :icon="VideoPlay" :loading="scanning" :disabled="scanning" @click="scan">扫描</el-button></div></div>
+    <div class="metric"><p class="metric-label">今日 Signal</p><p class="metric-value">{{ stats?.today_signal_count ?? '—' }}</p><div class="metric-foot"><span class="metric-note">UTC+8 自然日累计</span><el-button size="small" type="primary" :icon="VideoPlay" :loading="scanning" :disabled="scanning" @click="scan">扫描</el-button></div></div>
   </div>
   <section class="section">
     <div class="section-head"><h2>最近 Signal</h2><el-button text @click="router.push('/signals')">查看全部</el-button></div>
