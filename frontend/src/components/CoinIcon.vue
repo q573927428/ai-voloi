@@ -27,7 +27,7 @@ const base = computed(() => {
   return match ? match[1] : props.symbol.replace(/USDT$/, '')
 })
 
-const iconUrl = computed(() => `https://cdn.jsdelivr.net/gh/atomiclabs/cryptocurrency-icons@1a63530be6e374711a8554f31b17e4cb92c25fa5/svg/color/${base.value.toLowerCase()}.svg`)
+const iconUrl = computed(() => `http://h.wuhaxi.com/assets/crypto-icons/${base.value.toLowerCase()}.png`)
 
 /** 占位缩写字取币种标识前 2 个字符，保持色块内可读。 */
 const fallbackText = computed(() => base.value.slice(0, 2).toUpperCase())
