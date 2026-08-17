@@ -71,7 +71,7 @@ onUnmounted(() => timer && window.clearInterval(timer))
   </div>
   <section class="section">
     <div class="section-head"><h2>最近 Signal</h2><el-button text @click="router.push('/signals')">查看全部</el-button></div>
-    <div class="table-frame"><SignalTable :rows="signals" :loading="loading" @open="router.push(`/signals/${$event}`)" /></div>
+    <div class="table-frame"><SignalTable :rows="signals" :loading="loading" prioritize-resonance @open="router.push(`/signals/${$event}`)" /></div>
   </section>
 
   <MarketPoolDrawer v-model="poolVisible" :mode="poolMode" />

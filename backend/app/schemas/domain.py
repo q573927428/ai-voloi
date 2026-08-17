@@ -293,9 +293,10 @@ class SignalListRead(SignalRead):
 
 
 class SignalPage(BaseModel):
-    """Signal 列表的分页响应。"""
+    """Signal 列表的分页响应，total 为明细数，group_total 为分页使用的共振组数。"""
     items: list[SignalListRead]
     total: int
+    group_total: int
     page: int
     page_size: int
 

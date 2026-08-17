@@ -5,7 +5,7 @@ from datetime import datetime, time, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from sqlalchemy import asc, desc, func, select
+from sqlalchemy import asc, case, desc, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -124,32 +124,96 @@ async def list_signals(
     page_size: int = Query(30, ge=1, le=200),
     session: AsyncSession = Depends(get_db),
 ) -> SignalPage:
-    """分页检索不可变 Signal 快照，支持页面要求的筛选和排序。"""
+    """按共振组分页检索 Signal，确保同交易对、同检测时间的多周期明细不跨页。"""
     filters = []
     if symbol:
         filters.append(Signal.symbol.ilike(f"%{symbol}%"))
     if timeframe:
         filters.append(Signal.timeframe == timeframe)
+    # total 保留周期明细总数，group_total 才是页面分页所用的共振组总数。
     total = await session.scalar(select(func.count()).select_from(Signal).where(*filters)) or 0
+    grouped_signals = (
+        select(Signal.symbol, Signal.detected_at)
+        .where(*filters)
+        .group_by(Signal.symbol, Signal.detected_at)
+        .subquery()
+    )
+    group_total = await session.scalar(select(func.count()).select_from(grouped_signals)) or 0
+
     column = getattr(Signal, sort_by)
-    ordering = asc(column) if sort_order == "asc" else desc(column)
+    group_sort_value = func.max(column).label("sort_value")
+    group_size = func.count(Signal.id).label("group_size")
+    longest_timeframe = func.max(case(
+        (Signal.timeframe == "15m", 15),
+        (Signal.timeframe == "30m", 30),
+        (Signal.timeframe == "1h", 60),
+        (Signal.timeframe == "4h", 240),
+        (Signal.timeframe == "1d", 1440),
+        else_=0,
+    )).label("longest_timeframe")
+    group_ordering = asc(group_sort_value) if sort_order == "asc" else desc(group_sort_value)
+    group_query = (
+        select(
+            Signal.symbol,
+            Signal.detected_at,
+            group_sort_value,
+            group_size,
+            longest_timeframe,
+        )
+        .where(*filters)
+        .group_by(Signal.symbol, Signal.detected_at)
+    )
+    # 按时间查看时，同轮扫描优先展示共振周期更多、最长周期更长的组。
+    if sort_by == "detected_at":
+        group_query = group_query.order_by(
+            group_ordering,
+            desc(group_size),
+            desc(longest_timeframe),
+            Signal.symbol.asc(),
+        )
+    else:
+        # 指标排序以组内最大值代表该共振组，再用组键保证结果稳定。
+        group_query = group_query.order_by(
+            group_ordering,
+            Signal.detected_at.desc(),
+            Signal.symbol.asc(),
+        )
+    selected_groups = (await session.execute(
+        group_query.offset((page - 1) * page_size).limit(page_size)
+    )).all()
+
+    if not selected_groups:
+        return SignalPage(
+            items=[], total=total, group_total=group_total, page=page, page_size=page_size
+        )
+
+    group_keys = [(row.symbol, row.detected_at) for row in selected_groups]
     rows = (await session.execute(
         select(Signal, Symbol.contract_type)
         .options(selectinload(Signal.future_performance))
         .join(Symbol, Symbol.symbol == Signal.symbol)
-        .where(*filters)
-        .order_by(ordering)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
+        .where(*filters, tuple_(Signal.symbol, Signal.detected_at).in_(group_keys))
+        .order_by(Signal.symbol.asc(), Signal.detected_at.desc(), Signal.timeframe.asc())
     )).all()
-    # Signal 表保留不可变行情快照，合约分类从交易对主数据关联，历史记录也能获得最新的 TradFi 标识。
-    items = [
-        SignalListRead.model_validate(signal).model_copy(
-            update={"is_tradfi": contract_type == "TRADIFI_PERPETUAL"}
-        )
-        for signal, contract_type in rows
-    ]
-    return SignalPage(items=items, total=total, page=page, page_size=page_size)
+
+    rows_by_group: dict[tuple[str, datetime], list[tuple[Signal, str]]] = {}
+    for signal, contract_type in rows:
+        rows_by_group.setdefault((signal.symbol, signal.detected_at), []).append((signal, contract_type))
+
+    # 按已分页的组顺序展开明细，不让第二次查询的数据库顺序破坏组排名。
+    items: list[SignalListRead] = []
+    for group in selected_groups:
+        for signal, contract_type in rows_by_group.get((group.symbol, group.detected_at), []):
+            items.append(SignalListRead.model_validate(signal).model_copy(
+                update={"is_tradfi": contract_type == "TRADIFI_PERPETUAL"}
+            ))
+    return SignalPage(
+        items=items,
+        total=total,
+        group_total=group_total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/signals/{signal_id}")

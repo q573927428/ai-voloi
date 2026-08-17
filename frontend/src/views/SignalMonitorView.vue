@@ -23,7 +23,8 @@ async function load() {
   try {
     const data = await api.signals({ symbol: symbol.value || undefined, timeframe: timeframe.value || undefined, sort_by: sortBy.value, page: page.value, page_size: 30 })
     rows.value = data.items
-    total.value = data.total
+    // 分页以完整共振组为单位，避免同一交易对的多周期信号跨页。
+    total.value = data.group_total
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
@@ -42,6 +43,6 @@ onMounted(load)
     <el-select v-model="sortBy" style="width: 170px"><el-option label="按检测时间" value="detected_at" /><el-option label="按 Volume Ratio" value="volume_ratio" /><el-option label="按 OI 变化" value="oi_change_percent" /></el-select>
     <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
   </div>
-  <div class="table-frame"><SignalTable :rows="rows" :loading="loading" @open="router.push(`/signals/${$event}`)" /></div>
+  <div class="table-frame"><SignalTable :rows="rows" :loading="loading" :prioritize-resonance="sortBy === 'detected_at'" @open="router.push(`/signals/${$event}`)" /></div>
   <div style="display:flex;justify-content:flex-end;padding-top:16px"><el-pagination v-model:current-page="page" :page-size="30" :total="total" layout="total, prev, pager, next" /></div>
 </template>

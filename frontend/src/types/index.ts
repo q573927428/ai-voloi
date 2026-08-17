@@ -196,8 +196,12 @@ export interface RealtimeKlineMessage {
 /** Signal 分页响应。 */
 export interface SignalPage {
   items: SignalSnapshot[]
+  /** 过滤条件下的周期信号明细总数。 */
   total: number
+  /** 按“检测时间 + 交易对”去重后的共振组总数，用于分页。 */
+  group_total: number
   page: number
+  /** 每页共振组数，每组可包含多条周期明细。 */
   page_size: number
 }
 
