@@ -25,6 +25,26 @@ function price(value: string): string {
   return number.toLocaleString('zh-CN', { maximumFractionDigits: resolvePricePrecision(number) })
 }
 
+/** 将扫描进度约束在进度条支持的 0–100 范围内，避免异常数据造成视觉溢出。 */
+function progressPercent(value: string): number {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return 0
+  return Math.min(100, Math.max(0, number))
+}
+
+/** 进度条标签保留一位小数，与原进度文本精度一致。 */
+function progressLabel(percentage: number): string {
+  return `${percentage.toFixed(1)}%`
+}
+
+/** K 线越接近完成，进度条越偏向暖色，连续色相便于直观看出完成程度。 */
+function progressColor(percentage: number): string {
+  const normalized = Math.min(100, Math.max(0, percentage)) / 100
+  const hue = 207 - 189 * normalized
+  const saturation = 46 + 18 * normalized
+  return `hsl(${hue.toFixed(1)}  ${saturation.toFixed(1)}% 46%)`
+}
+
 /** 将 Signal 实际使用的 OI 回看分钟数格式化为紧凑周期标签。 */
 function oiWindow(minutes: number | null) {
   if (minutes == null) return '旧口径'
@@ -115,12 +135,12 @@ function groupRowClass({ row }: { row: GroupedSignalRow }): string {
 
 <template>
   <el-table :data="groupedRows" :loading="loading" :span-method="groupSpan" :row-class-name="groupRowClass" row-key="id" height="630" stripe empty-text="暂无符合条件的 Signal">
-    <el-table-column label="检测时间" min-width="166"><template #default="{ row }">{{ dateTime(row.detected_at) }}</template></el-table-column>
+    <el-table-column label="检测时间" min-width="160"><template #default="{ row }">{{ dateTime(row.detected_at) }}</template></el-table-column>
     <el-table-column prop="symbol" label="交易对" min-width="180" fixed="left"><template #default="{ row }"><div class="symbol-group"><MarketSymbol :symbol="row.symbol" :is-tradfi="row.is_tradfi" /><el-tag v-if="row.groupSize > 1" class="resonance-tag" type="warning" effect="light" size="small">{{ row.groupSize }} 周期共振</el-tag></div></template></el-table-column>
     <el-table-column prop="timeframe" label="周期" width="72" align="center"><template #default="{ row }"><el-tag class="timeframe-tag" :class="timeframeClass(row.timeframe)" effect="plain" size="small">{{ row.timeframe }}</el-tag></template></el-table-column>
-    <el-table-column label="当前价格" min-width="116" align="right"><template #default="{ row }"><span class="number">{{ price(row.current_price) }}</span></template></el-table-column>
-    <el-table-column label="进度" width="90" align="right"><template #default="{ row }">{{ Number(row.progress_percent).toFixed(1) }}%</template></el-table-column>
-    <el-table-column label="预计量" min-width="120" align="right"><template #default="{ row }">{{ compact(row.estimated_volume) }}</template></el-table-column>
+    <el-table-column label="当前价格" min-width="110" align="right"><template #default="{ row }"><span class="number">{{ price(row.current_price) }}</span></template></el-table-column>
+    <el-table-column label="K线进度" width="140"><template #default="{ row }"><el-progress class="signal-progress" :percentage="progressPercent(row.progress_percent)" :stroke-width="8" :format="progressLabel" :color="progressColor" /></template></el-table-column>
+    <el-table-column label="预计量" min-width="100" align="right"><template #default="{ row }">{{ compact(row.estimated_volume) }}</template></el-table-column>
     <el-table-column label="EMA量" min-width="100" align="right"><template #default="{ row }">{{ compact(row.volume_ema) }}</template></el-table-column>
     <el-table-column label="量比" min-width="80" align="right"><template #default="{ row }"><span :class="standoutMetricClass(row.volume_ratio)">{{ Number(row.volume_ratio).toFixed(2) }}x</span></template></el-table-column>
     <el-table-column label="OI 变化" min-width="108" align="right"><template #default="{ row }"><div class="oi-change"><span :class="standoutMetricClass(row.oi_change_percent)">+{{ Number(row.oi_change_percent).toFixed(3) }}%</span><small>{{ oiWindow(row.oi_lookback_minutes) }}</small></div></template></el-table-column>
@@ -137,6 +157,8 @@ function groupRowClass({ row }: { row: GroupedSignalRow }): string {
 <style scoped>
 .pending { color: #8a95a1; font-size: 12px; }
 .standout-metric { display: inline-block; color: #075c42; font-weight: 750; }
+.signal-progress { width: 100%; }
+.signal-progress :deep(.el-progress__text) { min-width: 43px; font-size: 12px !important; font-variant-numeric: tabular-nums; }
 .symbol-group { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
 .resonance-tag { font-weight: 600; }
 .timeframe-tag { min-width: 42px; font-weight: 600; }
