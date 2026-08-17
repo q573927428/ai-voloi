@@ -14,7 +14,7 @@ NUM = Numeric(36, 12)
 
 
 class Symbol(Base, TimestampMixin):
-    """Binance 永续合约及最近一次 24h 市场快照。"""
+    """Binance 永续合约及最近一次市场快照。"""
     __tablename__ = "symbols"
     symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
     base_asset: Mapped[str] = mapped_column(String(20))
@@ -25,6 +25,7 @@ class Symbol(Base, TimestampMixin):
     last_price: Mapped[Decimal | None] = mapped_column(NUM)
     price_change_percent_24h: Mapped[Decimal | None] = mapped_column(NUM)
     quote_volume_24h: Mapped[Decimal | None] = mapped_column(NUM, index=True)
+    funding_rate: Mapped[Decimal | None] = mapped_column(NUM)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
 

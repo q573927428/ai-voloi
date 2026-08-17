@@ -11,7 +11,7 @@ export interface DashboardStats {
   current_signal_count: number
 }
 
-/** 永续合约明细，数值字段来自最近一次 24h ticker 快照。 */
+/** 永续合约明细，数值字段来自最近一次市场快照。 */
 export interface ActiveSymbol {
   symbol: string
   base_asset: string
@@ -21,6 +21,7 @@ export interface ActiveSymbol {
   last_price: string | null
   price_change_percent_24h: string | null
   quote_volume_24h: string | null
+  funding_rate: string | null
   updated_at: string
 }
 

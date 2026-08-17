@@ -23,11 +23,11 @@ docker-compose.yml          PostgreSQL、后端、前端编排
 
 ## 数据流程与 Binance API
 
-启动时调用一次 `GET /fapi/v1/exchangeInfo` 获取 `TRADING + PERPETUAL + USDT` 合约，并用一次 `GET /fapi/v1/ticker/24hr` 批量取得全市场 ticker。达到 `min_24h_quote_volume` 的交易对进入动态池。
+启动时调用一次 `GET /fapi/v1/exchangeInfo` 获取 `TRADING + PERPETUAL + USDT` 合约，并分别用一次 `GET /fapi/v1/ticker/24hr` 和 `GET /fapi/v1/premiumIndex` 批量取得全市场 ticker 与最近一期资金费率。达到 `min_24h_quote_volume` 的交易对进入动态池。
 
 新入池交易对通过 `GET /fapi/v1/klines` 初始化每周期 1000 根历史 K 线。常态运行订阅 `<symbol>@kline_<timeframe>` 组合流，不会在每次扫描时重新请求所有 K 线。连接带心跳、断线指数退避和自动重新订阅；检测到收盘时间缺口后，REST 拉取最近窗口补齐。
 
-只有成交量条件通过的 `symbol + timeframe` 才调用 `GET /futures/data/openInterestHist`。统一客户端包含速率限制、并发信号量、超时，以及针对 `429/500/502/503` 和网络异常的有限指数退避。`GET /fapi/v1/premiumIndex` 已封装供后续保存资金费率数据使用。
+只有成交量条件通过的 `symbol + timeframe` 才调用 `GET /futures/data/openInterestHist`。统一客户端包含速率限制、并发信号量、超时，以及针对 `429/500/502/503` 和网络异常的有限指数退避。市场池快照每 15 分钟批量刷新一次 ticker 与资金费率。
 
 ## Scanner 逻辑
 

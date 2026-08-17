@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
 from app.models import Kline, Symbol
-from app.schemas import ConfigValues, KlineData, TickerData
+from app.schemas import ConfigValues, FundingRateData, KlineData, TickerData
 from app.services.binance.client import BinanceClient
 from app.services.cache.kline_cache import KlineCache
 from app.services.chart import build_chart_candles
@@ -124,8 +124,8 @@ class MonitorRuntime:
         self.initialization_status = "loading"
         async with self.session_factory() as session:
             self.config = await self.config_service.get(session)
-        exchange_symbols, tickers = await asyncio.gather(
-            self.client.exchange_symbols(), self.client.tickers()
+        exchange_symbols, tickers, funding_rates = await asyncio.gather(
+            self.client.exchange_symbols(), self.client.tickers(), self.client.funding_rates()
         )
         available = {item["symbol"]: item for item in exchange_symbols}
         new_active = {
@@ -135,7 +135,7 @@ class MonitorRuntime:
         previous = self.active_symbols
         self.active_symbols = new_active
         self.tickers = tickers
-        await self._persist_symbols(available, tickers)
+        await self._persist_symbols(available, tickers, funding_rates)
         new_symbols = new_active - previous
         if new_symbols:
             await self._initialize_klines(new_symbols)
@@ -148,7 +148,12 @@ class MonitorRuntime:
         self.config = config
         await self.refresh_pool()
 
-    async def _persist_symbols(self, available: dict, tickers: dict[str, TickerData]) -> None:
+    async def _persist_symbols(
+        self,
+        available: dict,
+        tickers: dict[str, TickerData],
+        funding_rates: dict[str, FundingRateData],
+    ) -> None:
         """持久化交易对市场快照；已有记录原地更新。"""
         async with self.session_factory() as session:
             existing = {
@@ -168,6 +173,8 @@ class MonitorRuntime:
                     row.last_price = ticker.last_price
                     row.price_change_percent_24h = ticker.price_change_percent
                     row.quote_volume_24h = ticker.quote_volume
+                funding_rate = funding_rates.get(symbol)
+                row.funding_rate = funding_rate.funding_rate if funding_rate else None
             await session.commit()
 
     async def _initialize_klines(self, symbols: set[str]) -> None:

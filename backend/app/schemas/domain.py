@@ -42,6 +42,12 @@ class TickerData(BaseModel):
     quote_volume: Decimal
 
 
+class FundingRateData(BaseModel):
+    """永续合约最近一次资金费率快照。"""
+    symbol: str
+    funding_rate: Decimal
+
+
 class OIPoint(BaseModel):
     """带时间戳的 Open Interest 观察点。"""
     timestamp: datetime
@@ -193,7 +199,7 @@ class DashboardStats(BaseModel):
 
 
 class ActiveSymbolRead(BaseModel):
-    """永续合约交易对、活跃池状态及最近一次 24h 市场快照。"""
+    """永续合约交易对、活跃池状态及最近一次市场快照。"""
     model_config = ConfigDict(from_attributes=True)
     symbol: str
     base_asset: str
@@ -203,4 +209,5 @@ class ActiveSymbolRead(BaseModel):
     last_price: Decimal | None
     price_change_percent_24h: Decimal | None
     quote_volume_24h: Decimal | None
+    funding_rate: Decimal | None
     updated_at: datetime

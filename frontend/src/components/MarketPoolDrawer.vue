@@ -44,6 +44,11 @@ const price = (value: string | null) => value === null
   ? '—'
   : Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 12 })
 
+/** Binance 返回小数费率，展示时换算为百分比并保留足够精度。 */
+const fundingRate = (value: string | null) => value === null
+  ? '—'
+  : `${Number(value) >= 0 ? '+' : ''}${(Number(value) * 100).toFixed(4)}%`
+
 const snapshotTime = (value: string) => new Date(value).toLocaleString('zh-CN', { hour12: false })
 
 /** 抽屉打开时拉取对应模式的市场列表，重复打开会重新加载最新快照。 */
@@ -94,6 +99,7 @@ watch(() => props.modelValue, (visible) => {
       <el-table-column label="最新价" min-width="100" align="right"><template #default="{ row }"><span class="number">{{ price(row.last_price) }}</span></template></el-table-column>
       <el-table-column label="24h 涨跌" min-width="110" align="right"><template #default="{ row }"><span :class="Number(row.price_change_percent_24h) >= 0 ? 'positive' : 'negative'">{{ row.price_change_percent_24h === null ? '—' : `${Number(row.price_change_percent_24h) >= 0 ? '+' : ''}${Number(row.price_change_percent_24h).toFixed(2)}%` }}</span></template></el-table-column>
       <el-table-column label="24h 成交额" min-width="110" align="right"><template #default="{ row }"><span class="number">{{ compact(row.quote_volume_24h) }} </span></template></el-table-column>
+      <el-table-column label="资金费率" min-width="105" align="right"><template #default="{ row }"><span :class="row.funding_rate === null ? 'number' : Number(row.funding_rate) >= 0 ? 'positive' : 'negative'">{{ fundingRate(row.funding_rate) }}</span></template></el-table-column>
       <el-table-column label="快照时间" min-width="170"><template #default="{ row }">{{ snapshotTime(row.updated_at) }}</template></el-table-column>
     </el-table>
   </el-drawer>

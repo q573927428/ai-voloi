@@ -1,6 +1,7 @@
 """Binance REST 客户端交易对筛选规则测试。"""
 
 from datetime import datetime, timezone
+from decimal import Decimal
 
 import pytest
 
@@ -28,6 +29,28 @@ async def test_exchange_symbols_includes_equity_tradifi_perpetual() -> None:
     symbols = await client.exchange_symbols()
 
     assert [item["symbol"] for item in symbols] == ["BTCUSDT", "TSLAUSDT", "XAUUSDT"]
+
+
+@pytest.mark.asyncio
+async def test_funding_rates_parses_bulk_premium_index() -> None:
+    """批量 premium index 应解析资金费率，并忽略没有费率的非标准合约。"""
+    client = BinanceClient.__new__(BinanceClient)
+
+    async def fake_get(path: str) -> list[dict]:
+        assert path == "/fapi/v1/premiumIndex"
+        return [
+            {"symbol": "BTCUSDT", "lastFundingRate": "0.00010000"},
+            {"symbol": "ETHUSDT", "lastFundingRate": "-0.00025000"},
+            {"symbol": "XAUUSDT"},
+        ]
+
+    client._get = fake_get
+
+    rates = await client.funding_rates()
+
+    assert rates["BTCUSDT"].funding_rate == Decimal("0.00010000")
+    assert rates["ETHUSDT"].funding_rate == Decimal("-0.00025000")
+    assert "XAUUSDT" not in rates
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 from app.core.config import Settings
-from app.schemas import KlineData, OIPoint, TickerData
+from app.schemas import FundingRateData, KlineData, OIPoint, TickerData
 
 
 class RateLimiter:
@@ -125,5 +125,14 @@ class BinanceClient:
             for row in data
         ]
 
-    async def premium_index(self) -> list[dict[str, Any]]:
-        return await self._get("/fapi/v1/premiumIndex")
+    async def funding_rates(self) -> dict[str, FundingRateData]:
+        """批量读取全部永续合约最近一次资金费率。"""
+        data = await self._get("/fapi/v1/premiumIndex")
+        return {
+            item["symbol"]: FundingRateData(
+                symbol=item["symbol"], funding_rate=item["lastFundingRate"]
+            )
+            for item in data
+            # 个别非标准合约可能不返回费率，不能让其阻断整个市场快照刷新。
+            if item.get("symbol") and item.get("lastFundingRate") is not None
+        }
