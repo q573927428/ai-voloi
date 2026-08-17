@@ -88,7 +88,7 @@ function performanceClass(value?: string | null): string {
 
 /** 普通正数保持默认文字色，仅超过 5x 或 5% 时使用深绿色突出显示。 */
 function standoutMetricClass(value: string): string {
-  return Number(value) > 5 ? 'standout-metric' : ''
+  return Number(value) > 5 ? 'signal-metric standout-metric' : 'signal-metric'
 }
 
 /**
@@ -156,6 +156,7 @@ function groupRowClass({ row }: { row: GroupedSignalRow }): string {
 
 <style scoped>
 .pending { color: #8a95a1; font-size: 12px; }
+.signal-metric { font-weight: 650; }
 .standout-metric { display: inline-block; color: #075c42; font-weight: 750; }
 .signal-progress { width: 100%; }
 .signal-progress :deep(.el-progress__text) { min-width: 43px; font-size: 12px !important; font-variant-numeric: tabular-nums; }
