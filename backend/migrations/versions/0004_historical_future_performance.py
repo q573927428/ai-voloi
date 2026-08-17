@@ -3,7 +3,8 @@
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0004_historical_future_performance"
+# Alembic 默认版本列为 VARCHAR(32)，revision 必须保持在该长度以内。
+revision = "0004_future_performance"
 down_revision = "0003_signal_oi_lookback"
 branch_labels = None
 depends_on = None

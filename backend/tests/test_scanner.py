@@ -9,7 +9,7 @@ import pytest
 from app.models import Signal
 from app.schemas import ConfigValues, KlineData, OIPoint, TickerData
 from app.services.cache.kline_cache import KlineCache
-from app.services.scanner.scanner import OI_HISTORY_PERIOD, Scanner
+from app.services.scanner.scanner import Scanner
 
 
 class FakeBinanceClient:
@@ -191,10 +191,10 @@ async def test_signal_requires_both_volume_and_oi_and_is_published() -> None:
 
     assert len(client.calls) == 1
     symbol, period, requested_start_ms = client.calls[0]
-    assert (symbol, period) == ("BTCUSDT", OI_HISTORY_PERIOD)
-    # OI 起点统一为检测时间前 15 分钟，而不是当前 30m K 线的开盘时间。
+    assert (symbol, period) == ("BTCUSDT", "5m")
+    # 30m K 线默认独立回看 30 分钟，不再复用全局 15 分钟窗口。
     requested_start = datetime.fromtimestamp(requested_start_ms / 1000, timezone.utc)
-    assert now - timedelta(minutes=16) < requested_start < now - timedelta(minutes=14)
+    assert now - timedelta(minutes=31) < requested_start < now - timedelta(minutes=29)
     assert run.candidate_count == 1
     assert run.signal_count == 1
     assert published[0].signal_type == "VOLUME_OI_ANOMALY"
@@ -203,7 +203,7 @@ async def test_signal_requires_both_volume_and_oi_and_is_published() -> None:
     assert published[0].rsi14 is not None
     assert published[0].adx14 is not None
     assert published[0].atr14 is not None
-    assert published[0].oi_lookback_minutes == 15
+    assert published[0].oi_lookback_minutes == 30
 
 
 @pytest.mark.asyncio

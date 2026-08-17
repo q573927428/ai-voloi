@@ -10,6 +10,14 @@ defineEmits<{ open: [id: string] }>()
 
 const compact = (value: string) => Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 2 }).format(Number(value))
 const dateTime = (value: string) => new Date(value).toLocaleString('zh-CN', { hour12: false })
+
+/** 将 Signal 实际使用的 OI 回看分钟数格式化为紧凑周期标签。 */
+function oiWindow(minutes: number | null) {
+  if (minutes == null) return '旧口径'
+  if (minutes % 1440 === 0) return `${minutes / 1440}d`
+  if (minutes % 60 === 0) return `${minutes / 60}h`
+  return `${minutes}m`
+}
 </script>
 
 <template>
@@ -22,7 +30,7 @@ const dateTime = (value: string) => new Date(value).toLocaleString('zh-CN', { ho
     <el-table-column label="预计成交量" min-width="120" align="right"><template #default="{ row }">{{ compact(row.estimated_volume) }}</template></el-table-column>
     <el-table-column label="EMA" min-width="100" align="right"><template #default="{ row }">{{ compact(row.volume_ema) }}</template></el-table-column>
     <el-table-column label="Volume Ratio" min-width="120" align="right"><template #default="{ row }"><span class="positive">{{ Number(row.volume_ratio).toFixed(2) }}x</span></template></el-table-column>
-    <el-table-column label="OI 变化" min-width="100" align="right"><template #default="{ row }"><span class="positive">+{{ Number(row.oi_change_percent).toFixed(3) }}%</span></template></el-table-column>
+    <el-table-column label="OI 变化" min-width="108" align="right"><template #default="{ row }"><div class="oi-change"><span class="positive">+{{ Number(row.oi_change_percent).toFixed(3) }}%</span><small>{{ oiWindow(row.oi_lookback_minutes) }}</small></div></template></el-table-column>
     <el-table-column label="24h 成交额" min-width="116" align="right"><template #default="{ row }">{{ compact(row.quote_volume_24h) }}</template></el-table-column>
     <el-table-column label="" width="58" fixed="right">
       <template #default="{ row }"><el-tooltip content="查看完整快照"><el-button text circle :icon="View" aria-label="查看完整快照" @click="$emit('open', row.id)" /></el-tooltip></template>

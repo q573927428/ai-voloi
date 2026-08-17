@@ -10,19 +10,38 @@ from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from app.models import OpenInterestSnapshot, ScannerRun, Signal, SignalFuturePerformance
-from app.schemas import ConfigValues, KlineData, TickerData
+from app.schemas import ConfigValues, KlineData, OIPoint, TickerData
 from app.services.binance.client import BinanceClient
 from app.services.cache.kline_cache import KlineCache, kline_progress, volume_ema
 from app.services.cache.technical_indicators import TechnicalIndicators, calculate_technical_indicators
 
 logger = logging.getLogger(__name__)
 
-# OI 是时点快照而非周期累计值。固定使用扫描间隔粒度，才能在未完成 K 线内取得开盘与最新观察点。
-OI_HISTORY_PERIOD = "5m"
+# Binance 单次最多取 100 个 OI 点；按窗口自动放大采样粒度，确保长窗口仍覆盖到检测时刻。
+OI_HISTORY_PERIODS = (
+    (5, "5m"),
+    (15, "15m"),
+    (30, "30m"),
+    (60, "1h"),
+    (120, "2h"),
+    (240, "4h"),
+    (360, "6h"),
+    (720, "12h"),
+    (1440, "1d"),
+)
+
+
+def oi_history_period(lookback_minutes: int) -> str:
+    """选择能在 100 个观察点内覆盖完整回看窗口的最细 OI 采样周期。"""
+    minimum_period_minutes = (lookback_minutes + 98) // 99
+    for period_minutes, period in OI_HISTORY_PERIODS:
+        if period_minutes >= minimum_period_minutes:
+            return period
+    return "1d"
 
 
 def select_oi_range(points, target_start: datetime, now: datetime):
-    """选择最接近 K 线开盘的 OI 起点和扫描时可用的最新终点。"""
+    """选择最接近回看起点的 OI 和扫描时可用的最新 OI。"""
     usable = sorted((p for p in points if p.timestamp <= now), key=lambda p: p.timestamp)
     if len(usable) < 2:
         return None
@@ -114,20 +133,26 @@ class Scanner:
             existing_signal_keys = await self._existing_signal_keys(candidate_keys)
             signal_models: list[Signal] = []
             oi_rows: list[OpenInterestSnapshot] = []
+            # 相同交易对和回看窗口只查询一次，供同轮扫描中的多个 K 线周期复用。
+            oi_ranges: dict[tuple[str, int], tuple[OIPoint, OIPoint] | None] = {}
             for symbol, timeframe, current, progress, ema, ratio, indicators in candidates:
                 signal_key = (symbol, timeframe, current.open_time)
                 # 同一根 K 线只在首次满足组合条件时生成一次 Signal。
                 if signal_key in existing_signal_keys:
                     continue
                 try:
-                    run.oi_request_count += 1
-                    oi_target_start = started - timedelta(minutes=config.oi_lookback_minutes)
-                    points = await self.client.open_interest(
-                        symbol,
-                        OI_HISTORY_PERIOD,
-                        int(oi_target_start.timestamp() * 1000),
-                    )
-                    matched = select_oi_range(points, oi_target_start, started)
+                    oi_lookback_minutes = config.oi_lookback_for(timeframe)
+                    oi_cache_key = (symbol, oi_lookback_minutes)
+                    if oi_cache_key not in oi_ranges:
+                        run.oi_request_count += 1
+                        oi_target_start = started - timedelta(minutes=oi_lookback_minutes)
+                        points = await self.client.open_interest(
+                            symbol,
+                            oi_history_period(oi_lookback_minutes),
+                            int(oi_target_start.timestamp() * 1000),
+                        )
+                        oi_ranges[oi_cache_key] = select_oi_range(points, oi_target_start, started)
+                    matched = oi_ranges[oi_cache_key]
                     if not matched:
                         continue
                     oldest, newest = matched
@@ -157,7 +182,7 @@ class Scanner:
                         ema50_slope_percent=indicators.ema50_slope_percent,
                         oldest_oi=oldest.open_interest, newest_oi=newest.open_interest,
                         oi_change_absolute=change, oi_change_percent=change_percent,
-                        oi_lookback_minutes=config.oi_lookback_minutes,
+                        oi_lookback_minutes=oi_lookback_minutes,
                         oldest_timestamp=oldest.timestamp, newest_timestamp=newest.timestamp,
                         last_price=ticker.last_price, price_change_percent_24h=ticker.price_change_percent,
                         quote_volume_24h=ticker.quote_volume, signal_type="VOLUME_OI_ANOMALY",

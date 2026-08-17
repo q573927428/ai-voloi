@@ -117,7 +117,8 @@ export interface ScannerConfig {
   volume_ema_period: number
   volume_multiplier: number
   min_progress_percent: number
-  oi_lookback_minutes: number
+  /** 每个 K 线周期用于计算 OI 变化率的独立回看分钟数。 */
+  oi_lookback_minutes_by_timeframe: Record<string, number>
   oi_change_threshold_percent: number
   scan_interval_minutes: number
 }
