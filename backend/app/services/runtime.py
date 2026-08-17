@@ -72,7 +72,7 @@ class MonitorRuntime:
         self.broadcaster = broadcaster
         self.kline_broadcaster = kline_broadcaster
         self.scanner = Scanner(self.cache, self.client, session_factory, broadcaster.publish)
-        self.performance = PerformanceTracker(self.cache, session_factory)
+        self.performance = PerformanceTracker(self.client, session_factory)
         self.websocket = BinanceWebSocketManager(settings, self.on_kline)
         self.active_symbols: set[str] = set()
         self.tickers: dict[str, TickerData] = {}

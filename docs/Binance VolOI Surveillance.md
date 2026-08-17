@@ -14,7 +14,11 @@
 30m
 1h
 4h
+8h
+12h
+16h
 1d
+2d
 ```
 
 核心逻辑：
@@ -781,7 +785,11 @@ return15m
 return30m
 return1h
 return4h
+return8h
+return12h
+return16h
 return1d
+return2d
 ```
 
 以及：
