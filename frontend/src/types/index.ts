@@ -99,6 +99,22 @@ export interface MarketIndicators {
   }
 }
 
+/** Signal 检测后各观察周期的收益，以及已计算区间内的最大盈亏。 */
+export interface SignalFuturePerformance {
+  return_5m: string | null
+  return_15m: string | null
+  return_30m: string | null
+  return_1h: string | null
+  return_4h: string | null
+  return_8h: string | null
+  return_12h: string | null
+  return_16h: string | null
+  return_1d: string | null
+  return_2d: string | null
+  max_profit_percent: string | null
+  max_loss_percent: string | null
+}
+
 /** 不可变 Signal 市场快照，字段保留检测时刻的原始数值。 */
 export interface SignalSnapshot {
   id: string
@@ -140,7 +156,7 @@ export interface SignalSnapshot {
   price_change_percent_24h: string
   quote_volume_24h: string
   signal_type: string
-  future_performance?: Record<string, string | null> | null
+  future_performance?: SignalFuturePerformance | null
 }
 
 /** TradingView 图表中的 K 线和六组可选 EMA 数据点。 */

@@ -21,6 +21,7 @@ from app.schemas import (
     RealtimeChartData,
     SignalChartCandle,
     SignalChartData,
+    SignalListRead,
     SignalPage,
     SignalRead,
 )
@@ -118,6 +119,7 @@ async def list_signals(
     ordering = asc(column) if sort_order == "asc" else desc(column)
     rows = (await session.execute(
         select(Signal, Symbol.contract_type)
+        .options(selectinload(Signal.future_performance))
         .join(Symbol, Symbol.symbol == Signal.symbol)
         .where(*filters)
         .order_by(ordering)
@@ -126,7 +128,7 @@ async def list_signals(
     )).all()
     # Signal 表保留不可变行情快照，合约分类从交易对主数据关联，历史记录也能获得最新的 TradFi 标识。
     items = [
-        SignalRead.model_validate(signal).model_copy(
+        SignalListRead.model_validate(signal).model_copy(
             update={"is_tradfi": contract_type == "TRADIFI_PERPETUAL"}
         )
         for signal, contract_type in rows

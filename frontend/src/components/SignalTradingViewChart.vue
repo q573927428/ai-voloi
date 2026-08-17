@@ -361,7 +361,7 @@ async function renderChart() {
       wickUpColor: '#14805e', wickDownColor: '#c54d4a',
     })
     primaryEmaSeries = chart.addSeries(LineSeries, { color: '#2563eb', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'EMA14' })
-    secondaryEmaSeries = chart.addSeries(LineSeries, { color: '#d97706', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'EMA50' })
+    secondaryEmaSeries = chart.addSeries(LineSeries, { color: '#d97706', lineWidth: 3, priceLineVisible: false, lastValueVisible: true, title: 'EMA50' })
     volumeSeries = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceScaleId: '', priceLineVisible: false, lastValueVisible: false })
     volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
     const signalCandle = data.candles.find((item) => item.is_signal)

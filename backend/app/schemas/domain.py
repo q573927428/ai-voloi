@@ -270,9 +270,31 @@ class SignalRead(BaseModel):
     signal_type: str
 
 
+class SignalFuturePerformanceRead(BaseModel):
+    """Signal 各观察周期的未来收益，以及当前已计算区间的最大盈亏。"""
+    model_config = ConfigDict(from_attributes=True)
+    return_5m: Decimal | None
+    return_15m: Decimal | None
+    return_30m: Decimal | None
+    return_1h: Decimal | None
+    return_4h: Decimal | None
+    return_8h: Decimal | None
+    return_12h: Decimal | None
+    return_16h: Decimal | None
+    return_1d: Decimal | None
+    return_2d: Decimal | None
+    max_profit_percent: Decimal | None
+    max_loss_percent: Decimal | None
+
+
+class SignalListRead(SignalRead):
+    """Signal 列表项，在不可变快照之外附带可逐步补齐的未来表现。"""
+    future_performance: SignalFuturePerformanceRead | None = None
+
+
 class SignalPage(BaseModel):
     """Signal 列表的分页响应。"""
-    items: list[SignalRead]
+    items: list[SignalListRead]
     total: int
     page: int
     page_size: int
