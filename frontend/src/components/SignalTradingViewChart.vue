@@ -9,13 +9,14 @@ import {
   createChart,
   createSeriesMarkers,
   type IChartApi,
+  type LogicalRange,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
 import { api, errorMessage } from '../api/client'
-import type { RealtimeKlineMessage, SignalChartCandle, SignalChartData } from '../types'
+import type { ChartLogicalViewport, RealtimeKlineMessage, SignalChartCandle, SignalChartData } from '../types'
 import { resolvePricePrecision } from '../utils/price'
 import CoinIcon from './CoinIcon.vue'
 import ContractFundFlowChart from './ContractFundFlowChart.vue'
@@ -46,6 +47,8 @@ const mode = ref<'snapshot' | 'realtime'>('realtime')
 const liveConnected = ref(false)
 const selectedTimeframe = ref(props.timeframe)
 const timeframeOptions = ref<string[]>([props.timeframe])
+const chartViewport = ref<ChartLogicalViewport | null>(null)
+const crosshairTime = ref<number | null>(null)
 const DEFAULT_VISIBLE_CANDLES = 200
 const RIGHT_EMPTY_CANDLES = 30
 let chart: IChartApi | null = null
@@ -63,6 +66,22 @@ let currentPricePrecision: number | null = null
 let realtimeRequestId = 0
 let disposed = false
 let visibleCandles: SignalChartCandle[] = []
+
+/**
+ * 发布 K 线当前逻辑窗口，让历史长度不同的资金流图仍能按同一根 K 线定位。
+ */
+function publishChartViewport(range: LogicalRange | null = chart?.timeScale().getVisibleLogicalRange() ?? null) {
+  // 两个接口对当前未收盘 K 线的可见时点可能短暂不同，使用倒数第二根稳定时间桶作为共同锚点。
+  const anchorIndex = Math.max(0, visibleCandles.length - 2)
+  const anchor = visibleCandles[anchorIndex]
+  if (!range || !anchor) return
+  chartViewport.value = {
+    anchorTime: anchor.time,
+    anchorIndex,
+    from: range.from,
+    to: range.to,
+  }
+}
 
 const modeOptions = [
   { label: '检测快照', value: 'snapshot' },
@@ -232,6 +251,7 @@ function setChartCandles(items: SignalChartCandle[]) {
       from: Math.max(0, lastLogicalIndex - DEFAULT_VISIBLE_CANDLES + 1),
       to: lastLogicalIndex + RIGHT_EMPTY_CANDLES,
     })
+    publishChartViewport()
   }
 }
 
@@ -351,6 +371,7 @@ async function renderChart() {
       layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#5f6c7b' },
       grid: { vertLines: { color: '#edf0f3' }, horzLines: { color: '#edf0f3' } },
       rightPriceScale: { borderColor: '#dce1e7', scaleMargins: { top: 0.08, bottom: 0.22 } },
+      leftPriceScale: { visible: true, borderVisible: false, minimumWidth: 72 },
       timeScale: {
         borderColor: '#dce1e7',
         timeVisible: true,
@@ -382,6 +403,11 @@ async function renderChart() {
       })
     }
     signalMarkers = createSeriesMarkers(candleSeries, [])
+    chart.priceScale('right').applyOptions({ minimumWidth: 84 })
+    chart.timeScale().subscribeVisibleLogicalRangeChange(publishChartViewport)
+    chart.subscribeCrosshairMove((param) => {
+      crosshairTime.value = typeof param.time === 'number' ? param.time : null
+    })
     if (data) setChartCandles(data.candles)
     // 移动端断点会同时改变容器宽高，图表必须同步两者，避免内部 Canvas 保留桌面高度。
     resizeObserver = new ResizeObserver(([entry]) => chart?.applyOptions({
@@ -428,6 +454,7 @@ onUnmounted(() => {
   disposed = true
   closeRealtime()
   resizeObserver?.disconnect()
+  chart?.timeScale().unsubscribeVisibleLogicalRangeChange(publishChartViewport)
   chart?.remove()
 })
 </script>
@@ -481,7 +508,12 @@ onUnmounted(() => {
     <div ref="container" class="chart-canvas" v-loading="loading" />
     <a class="chart-credit" href="https://www.tradingview.com/" target="_blank" rel="noreferrer">Charts by TradingView</a>
   </section>
-  <ContractFundFlowChart :symbol="symbol" :timeframe="selectedTimeframe" />
+  <ContractFundFlowChart
+    :symbol="symbol"
+    :timeframe="selectedTimeframe"
+    :viewport="chartViewport"
+    :crosshair-time="crosshairTime"
+  />
 </template>
 
 <style scoped>

@@ -210,6 +210,17 @@ export interface RealtimeKlineMessage {
   data: SignalChartCandle
 }
 
+/**
+ * 两张行情图共享的逻辑时间窗口。
+ * anchorTime/anchorIndex 用于在不同历史长度的数据集中定位同一根 K 线。
+ */
+export interface ChartLogicalViewport {
+  anchorTime: number
+  anchorIndex: number
+  from: number
+  to: number
+}
+
 /** 单个合约资金流时间桶，联合主动成交、价格和 Open Interest。 */
 export interface ContractFundFlowPoint {
   time: number
