@@ -287,6 +287,7 @@ async def signal_chart(
         low=signal.low,
         close=signal.current_price,
         volume=signal.current_volume,
+        quote_volume=signal.current_quote_volume,
         emas=current_emas,
         is_signal=True,
     ))

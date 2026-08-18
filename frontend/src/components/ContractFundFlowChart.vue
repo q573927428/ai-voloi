@@ -295,7 +295,8 @@ onUnmounted(() => {
         <span>{{ hoveredPoint ? `${formatTime(hoveredPoint.time, true)} K 线` : '当前 K 线' }} · 主动买卖成交额差与 Open Interest 联合判断</span>
       </div>
       <div v-if="displayedPoint" class="fund-flow-summary">
-        <div><span>主动净流</span><strong :class="Number(displayedPoint.net_taker_flow) >= 0 ? 'positive' : 'negative'">{{ compact(displayedPoint.net_taker_flow) }} USDT</strong></div>
+        <div><span>成交额</span><strong>${{ compact(displayedPoint.quote_volume) }}</strong></div>
+        <div><span>主动净流</span><strong :class="Number(displayedPoint.net_taker_flow) >= 0 ? 'positive' : 'negative'">${{ compact(displayedPoint.net_taker_flow) }}</strong></div>
         <div><span>OI 变化</span><strong :class="displayedPoint.open_interest_change_percent == null ? '' : Number(displayedPoint.open_interest_change_percent) >= 0 ? 'oi-up' : 'negative'">{{ percent(displayedPoint.open_interest_change_percent) }}</strong></div>
         <div><span>价格变化</span><strong :class="displayedPoint.price_change_percent == null ? '' : Number(displayedPoint.price_change_percent) >= 0 ? 'positive' : 'negative'">{{ percent(displayedPoint.price_change_percent) }}</strong></div>
       </div>

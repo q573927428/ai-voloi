@@ -184,6 +184,7 @@ export interface SignalChartCandle {
   low: string
   close: string
   volume: string
+  quote_volume: string
   emas: Record<string, string | null>
   is_signal: boolean
 }

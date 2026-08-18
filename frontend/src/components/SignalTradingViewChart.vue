@@ -472,6 +472,7 @@ onUnmounted(() => {
           <div class="market-item"><span>低</span><strong>{{ formatMarketPrice(latestCandle.low) }}</strong></div>
           <div class="market-item"><span>收</span><strong>{{ formatMarketPrice(latestCandle.close) }}</strong></div>
           <div class="market-item"><span>量</span><strong>{{ formatMarketVolume(latestCandle.volume) }}</strong></div>
+          <div class="market-item"><span>额</span><strong>${{ formatMarketVolume(latestCandle.quote_volume) }}</strong></div>
         </div>
       </div>
       <div class="chart-tools">

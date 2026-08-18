@@ -378,6 +378,7 @@ class SignalChartCandle(BaseModel):
     low: Decimal
     close: Decimal
     volume: Decimal
+    quote_volume: Decimal
     emas: dict[int, Decimal | None] = Field(default_factory=dict)
     is_signal: bool = False
 

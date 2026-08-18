@@ -58,6 +58,7 @@ def test_build_chart_candles_contains_all_selectable_ema_values() -> None:
         assert period in candles[-1].emas
         assert candles[period - 2].emas[period] is None
         assert candles[period - 1].emas[period] is not None
+    assert candles[-1].quote_volume == Decimal(100_219)
     assert candles[-1].time > candles[0].time
 
 

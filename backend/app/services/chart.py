@@ -33,6 +33,7 @@ def build_chart_candles(klines: Sequence[Any]) -> list[SignalChartCandle]:
             low=item.low,
             close=item.close,
             volume=item.volume,
+            quote_volume=item.quote_volume,
             emas={
                 period: ema_values[period][index - period + 1]
                 if index >= period - 1 else None
