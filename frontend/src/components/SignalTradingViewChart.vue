@@ -91,8 +91,8 @@ function publishChartViewport(range: LogicalRange | null = chart?.timeScale().ge
 }
 
 const modeOptions = [
-  { label: '检测快照', value: 'snapshot' },
-  { label: '实时行情', value: 'realtime' },
+  { label: '快照', value: 'snapshot' },
+  { label: '实时', value: 'realtime' },
 ]
 const hasSnapshot = computed(() => Boolean(props.signalId))
 
