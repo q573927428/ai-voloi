@@ -22,6 +22,8 @@ class Symbol(Base, TimestampMixin):
     contract_type: Mapped[str] = mapped_column(String(20), default="PERPETUAL")
     status: Mapped[str] = mapped_column(String(20), default="TRADING")
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    # 只记录当前这一次连续活跃周期；退出后清空，再次进入时重新计时。
+    active_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     last_price: Mapped[Decimal | None] = mapped_column(NUM)
     price_change_percent_24h: Mapped[Decimal | None] = mapped_column(NUM)
     quote_volume_24h: Mapped[Decimal | None] = mapped_column(NUM, index=True)
@@ -104,6 +106,8 @@ class Signal(Base, TimestampMixin):
     last_price: Mapped[Decimal] = mapped_column(NUM)
     price_change_percent_24h: Mapped[Decimal] = mapped_column(NUM)
     quote_volume_24h: Mapped[Decimal] = mapped_column(NUM)
+    # Signal 必须固化当时所属活跃周期的起点，避免后续退池或重新入池改写历史判断。
+    active_pool_entered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     funding_rate: Mapped[Decimal | None] = mapped_column(NUM)
     signal_type: Mapped[str] = mapped_column(String(40), default="VOLUME_OI_ANOMALY")
     future_performance: Mapped["SignalFuturePerformance | None"] = relationship(back_populates="signal", uselist=False)

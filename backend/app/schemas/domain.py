@@ -335,6 +335,7 @@ class SignalRead(BaseModel):
     last_price: Decimal
     price_change_percent_24h: Decimal
     quote_volume_24h: Decimal
+    active_pool_entered_at: datetime | None = None
     funding_rate: Decimal | None = None
     signal_type: str
 
@@ -418,6 +419,7 @@ class ActiveSymbolRead(BaseModel):
     quote_asset: str
     contract_type: str
     is_active: bool
+    active_since: datetime | None
     last_price: Decimal | None
     price_change_percent_24h: Decimal | None
     quote_volume_24h: Decimal | None

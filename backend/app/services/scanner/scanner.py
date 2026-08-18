@@ -89,9 +89,11 @@ class Scanner:
         tickers: dict[str, TickerData],
         config: ConfigValues,
         funding_rates: dict[str, FundingRateData] | None = None,
+        active_pool_entered_at: dict[str, datetime] | None = None,
     ) -> ScannerRun:
         """扫描活跃池并持久化审计记录、OI 快照与合格 Signal。"""
         funding_rates = funding_rates or {}
+        active_pool_entered_at = active_pool_entered_at or {}
         if self._lock.locked():
             raise RuntimeError("Scanner is already running")
         async with self._lock:
@@ -216,6 +218,7 @@ class Scanner:
                         oldest_timestamp=oldest.timestamp, newest_timestamp=newest.timestamp,
                         last_price=ticker.last_price, price_change_percent_24h=ticker.price_change_percent,
                         quote_volume_24h=ticker.quote_volume,
+                        active_pool_entered_at=active_pool_entered_at.get(symbol),
                         funding_rate=funding_rate.funding_rate if funding_rate else None,
                         signal_type="VOLUME_OI_ANOMALY",
                     ))

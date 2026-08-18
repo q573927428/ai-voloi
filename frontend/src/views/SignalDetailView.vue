@@ -15,6 +15,20 @@ const signal = ref<SignalSnapshot | null>(null)
 const loading = ref(false)
 const n = (value?: string | null) => value == null ? '—' : Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 6 })
 const dt = (value?: string) => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—'
+
+/** 展示交易对进入当前活跃周期后，等待多久才触发 Signal。 */
+function activePoolAgeText(enteredAt: string | null, detectedAt: string): string {
+  if (!enteredAt) return '旧 Signal 未记录'
+  const seconds = Math.max(0, Math.floor((new Date(detectedAt).getTime() - new Date(enteredAt).getTime()) / 1000))
+  if (seconds < 60) return `${seconds} 秒`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟`
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (hours < 24) return minutes ? `${hours} 小时 ${minutes} 分钟` : `${hours} 小时`
+  const days = Math.floor(hours / 24)
+  const remainingHours = hours % 24
+  return remainingHours ? `${days} 天 ${remainingHours} 小时` : `${days} 天`
+}
 const emaRows = computed(() => Object.values(signal.value?.technical_indicators?.trend.ema ?? {})
   .sort((left, right) => left.period - right.period))
 const alignmentText = computed(() => ({
@@ -101,7 +115,7 @@ onMounted(load)
     <section class="detail-section"><h2>K 线快照 · <MarketSymbol :symbol="signal.symbol" :is-tradfi="signal.is_tradfi" /> / {{ signal.timeframe }}</h2><div class="kv"><span>检测时间</span><strong>{{ dt(signal.detected_at) }}</strong></div><div class="kv"><span>K 线区间</span><strong>{{ dt(signal.open_time) }}<br>{{ dt(signal.close_time) }}</strong></div><div class="kv"><span>OHLC</span><strong>{{ n(signal.open) }} / {{ n(signal.high) }} / {{ n(signal.low) }} / {{ n(signal.current_price) }}</strong></div><div class="kv"><span>形成进度</span><strong>{{ Number(signal.progress_percent).toFixed(2) }}%</strong></div><div class="kv"><span>Quote Volume</span><strong>{{ n(signal.current_quote_volume) }}</strong></div></section>
     <section class="detail-section"><h2>成交量异常</h2><div class="kv"><span>当前成交量</span><strong>{{ n(signal.current_volume) }}</strong></div><div class="kv"><span>预计完整成交量</span><strong>{{ n(signal.estimated_volume) }}</strong></div><div class="kv"><span>Volume EMA{{ signal.volume_ema_period }}</span><strong>{{ n(signal.volume_ema) }}</strong></div><div class="kv"><span>触发阈值</span><strong>{{ n(signal.volume_multiplier) }}x</strong></div><div class="kv"><span>Volume Ratio</span><strong class="positive">{{ Number(signal.volume_ratio).toFixed(3) }}x</strong></div></section>
     <section class="detail-section"><h2>Open Interest</h2><div class="kv"><span>观察窗口</span><strong>{{ signal.oi_lookback_minutes == null ? '旧口径（K 线开盘起）' : `${signal.oi_lookback_minutes} 分钟` }}</strong></div><div class="kv"><span>起点 / 时间</span><strong>{{ n(signal.oldest_oi) }} · {{ dt(signal.oldest_timestamp) }}</strong></div><div class="kv"><span>终点 / 时间</span><strong>{{ n(signal.newest_oi) }} · {{ dt(signal.newest_timestamp) }}</strong></div><div class="kv"><span>绝对变化</span><strong>{{ n(signal.oi_change_absolute) }}</strong></div><div class="kv"><span>变化率</span><strong class="positive">+{{ Number(signal.oi_change_percent).toFixed(4) }}%</strong></div></section>
-    <section class="detail-section"><h2>24h 市场快照</h2><div class="kv"><span>最新价格</span><strong>{{ n(signal.last_price) }}</strong></div><div class="kv"><span>价格变化</span><strong :class="Number(signal.price_change_percent_24h) >= 0 ? 'positive' : 'negative'">{{ n(signal.price_change_percent_24h) }}%</strong></div><div class="kv"><span>Quote Volume</span><strong>{{ n(signal.quote_volume_24h) }}</strong></div><div class="kv"><span>资金费率</span><strong :class="tone(signal.funding_rate)">{{ fundingRateText(signal.funding_rate) }}</strong></div></section>
+    <section class="detail-section"><h2>24h 市场快照</h2><div class="kv"><span>最新价格</span><strong>{{ n(signal.last_price) }}</strong></div><div class="kv"><span>价格变化</span><strong :class="Number(signal.price_change_percent_24h) >= 0 ? 'positive' : 'negative'">{{ n(signal.price_change_percent_24h) }}%</strong></div><div class="kv"><span>Quote Volume</span><strong>{{ n(signal.quote_volume_24h) }}</strong></div><div class="kv"><span>进入活跃池</span><strong>{{ signal.active_pool_entered_at ? dt(signal.active_pool_entered_at) : '旧 Signal 未记录' }}</strong></div><div class="kv"><span>入池至触发</span><strong>{{ activePoolAgeText(signal.active_pool_entered_at, signal.detected_at) }}</strong></div><div class="kv"><span>资金费率</span><strong :class="tone(signal.funding_rate)">{{ fundingRateText(signal.funding_rate) }}</strong></div></section>
     <section class="detail-section">
       <h2>合约资金流快照</h2>
       <template v-if="signal.fund_flow_snapshot">

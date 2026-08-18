@@ -202,8 +202,13 @@ async def test_signal_requires_both_volume_and_oi_and_is_published() -> None:
     funding_rates = {
         "BTCUSDT": FundingRateData(symbol="BTCUSDT", funding_rate=Decimal("0.0001"))
     }
+    active_pool_entered_at = start - timedelta(hours=2)
     run = await scanner.scan(
-        {"BTCUSDT"}, tickers, ConfigValues(timeframes=["30m"]), funding_rates
+        {"BTCUSDT"},
+        tickers,
+        ConfigValues(timeframes=["30m"]),
+        funding_rates,
+        {"BTCUSDT": active_pool_entered_at},
     )
 
     assert len(client.history_calls) == 1
@@ -230,6 +235,7 @@ async def test_signal_requires_both_volume_and_oi_and_is_published() -> None:
     assert published[0].fund_flow_snapshot["regime"] == "new_longs"
     assert published[0].fund_flow_snapshot["version"] == "1.1"
     assert published[0].funding_rate == Decimal("0.0001")
+    assert published[0].active_pool_entered_at == active_pool_entered_at
     assert published[0].newest_oi == Decimal("1002")
     assert published[0].newest_timestamp == start + timedelta(minutes=10)
 

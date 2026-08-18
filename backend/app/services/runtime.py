@@ -33,6 +33,15 @@ TIMEFRAME_SECONDS = {
 }
 
 
+def update_active_pool_membership(row: Symbol, is_active: bool, observed_at: datetime) -> None:
+    """更新当前活跃周期起点；持续活跃保持原值，重新入池才开始新周期。"""
+    if is_active and (not row.is_active or row.active_since is None):
+        row.active_since = observed_at
+    elif not is_active:
+        row.active_since = None
+    row.is_active = is_active
+
+
 def has_fresh_closed_history(
     latest_close_time: datetime,
     timeframe: str,
@@ -75,6 +84,7 @@ class MonitorRuntime:
         self.performance = PerformanceTracker(self.client, session_factory)
         self.websocket = BinanceWebSocketManager(settings, self.on_kline)
         self.active_symbols: set[str] = set()
+        self.active_since_by_symbol: dict[str, datetime] = {}
         self.tickers: dict[str, TickerData] = {}
         self.funding_rates: dict[str, FundingRateData] = {}
         self.config = ConfigValues()
@@ -138,7 +148,9 @@ class MonitorRuntime:
         self.active_symbols = new_active
         self.tickers = tickers
         self.funding_rates = funding_rates
-        await self._persist_symbols(available, tickers, funding_rates)
+        self.active_since_by_symbol = await self._persist_symbols(
+            available, tickers, funding_rates
+        )
         # 先清理退出池或已禁用周期，迟到的旧 WebSocket 事件也会被缓存层拒绝。
         await self.cache.retain(new_active, set(self.config.timeframes))
         desired_markets = {
@@ -163,8 +175,9 @@ class MonitorRuntime:
         available: dict,
         tickers: dict[str, TickerData],
         funding_rates: dict[str, FundingRateData],
-    ) -> None:
-        """持久化交易对市场快照；已有记录原地更新。"""
+    ) -> dict[str, datetime]:
+        """持久化市场快照，并返回当前连续活跃周期的入池时间。"""
+        observed_at = datetime.now(timezone.utc)
         async with self.session_factory() as session:
             existing = {
                 row.symbol: row for row in (await session.execute(select(Symbol))).scalars()
@@ -178,7 +191,10 @@ class MonitorRuntime:
                         contract_type=item["contractType"], status=item["status"],
                     )
                     session.add(row)
-                row.is_active = symbol in self.active_symbols
+                    existing[symbol] = row
+                is_active = symbol in self.active_symbols
+                # 重启后数据库仍保留连续活跃周期；只有首次跟踪或状态跃迁才重置起点。
+                update_active_pool_membership(row, is_active, observed_at)
                 if ticker:
                     row.last_price = ticker.last_price
                     row.price_change_percent_24h = ticker.price_change_percent
@@ -186,6 +202,11 @@ class MonitorRuntime:
                 funding_rate = funding_rates.get(symbol)
                 row.funding_rate = funding_rate.funding_rate if funding_rate else None
             await session.commit()
+            return {
+                symbol: row.active_since
+                for symbol, row in existing.items()
+                if row.is_active and row.active_since is not None
+            }
 
     async def _initialize_markets(self, markets: set[tuple[str, str]]) -> None:
         """数据库优先恢复缺失市场缓存，仅对缺失或过期部分发起 REST 请求。"""
@@ -383,6 +404,7 @@ class MonitorRuntime:
                     self.tickers,
                     self.config,
                     self.funding_rates,
+                    self.active_since_by_symbol,
                 )
             except Exception:
                 logger.exception("Scheduled scan failed")

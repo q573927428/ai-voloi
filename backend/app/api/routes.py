@@ -482,6 +482,7 @@ async def run_scanner(request: Request) -> dict:
             runtime.tickers,
             runtime.config,
             runtime.funding_rates,
+            runtime.active_since_by_symbol,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

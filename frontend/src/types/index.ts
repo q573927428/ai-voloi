@@ -18,6 +18,7 @@ export interface ActiveSymbol {
   quote_asset: string
   contract_type: string
   is_active: boolean
+  active_since: string | null
   last_price: string | null
   price_change_percent_24h: string | null
   quote_volume_24h: string | null
@@ -156,6 +157,7 @@ export interface SignalSnapshot {
   last_price: string
   price_change_percent_24h: string
   quote_volume_24h: string
+  active_pool_entered_at: string | null
   funding_rate: string | null
   signal_type: string
   future_performance?: SignalFuturePerformance | null

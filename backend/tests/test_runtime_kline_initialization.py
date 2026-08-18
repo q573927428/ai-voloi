@@ -8,7 +8,12 @@ import pytest
 
 from app.schemas import KlineData
 from app.services.cache.kline_cache import KlineCache
-from app.services.runtime import KLINE_INCREMENTAL_LIMIT, MonitorRuntime, has_fresh_closed_history
+from app.services.runtime import (
+    KLINE_INCREMENTAL_LIMIT,
+    MonitorRuntime,
+    has_fresh_closed_history,
+    update_active_pool_membership,
+)
 
 
 class FakeKlineClient:
@@ -66,6 +71,23 @@ def make_runtime(stored: list[KlineData], batches: list[list[KlineData]]):
     runtime._load_stored_klines = load_stored
     runtime._persist_closed_klines = persist
     return runtime, persisted
+
+
+def test_active_pool_entry_time_tracks_current_membership_cycle() -> None:
+    """持续活跃不得重置时间，退池后再次进入必须开始新的活跃周期。"""
+    first_entry = datetime(2026, 8, 18, 8, tzinfo=timezone.utc)
+    second_entry = first_entry + timedelta(hours=2)
+    row = SimpleNamespace(is_active=False, active_since=None)
+
+    update_active_pool_membership(row, True, first_entry)
+    update_active_pool_membership(row, True, first_entry + timedelta(minutes=15))
+    assert row.active_since == first_entry
+
+    update_active_pool_membership(row, False, first_entry + timedelta(hours=1))
+    assert row.active_since is None
+
+    update_active_pool_membership(row, True, second_entry)
+    assert row.active_since == second_entry
 
 
 def current_timeframe_open(now: datetime, minutes: int) -> datetime:
