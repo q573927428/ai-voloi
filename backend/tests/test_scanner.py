@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 
 from app.models import Signal
-from app.schemas import ConfigValues, KlineData, OIPoint, TickerData
+from app.schemas import ConfigValues, FundingRateData, KlineData, OIPoint, TickerData
 from app.services.cache.kline_cache import KlineCache
 from app.services.scanner.scanner import Scanner
 
@@ -96,7 +96,8 @@ def make_kline(
     return KlineData(
         symbol="BTCUSDT", timeframe=timeframe, open_time=start,
         close_time=start + timedelta(minutes=duration_minutes), open=100, high=102, low=99, close=101,
-        volume=volume, quote_volume=Decimal(volume) * 100, is_closed=closed,
+        volume=volume, quote_volume=Decimal(volume) * 100,
+        taker_buy_quote_volume=Decimal(volume) * 60, is_closed=closed,
     )
 
 
@@ -187,7 +188,12 @@ async def test_signal_requires_both_volume_and_oi_and_is_published() -> None:
     scanner = Scanner(cache, client, FakeSessionFactory(), publish)
     tickers = {"BTCUSDT": TickerData(symbol="BTCUSDT", last_price=101, price_change_percent=2, quote_volume=20_000_000)}
 
-    run = await scanner.scan({"BTCUSDT"}, tickers, ConfigValues(timeframes=["30m"]))
+    funding_rates = {
+        "BTCUSDT": FundingRateData(symbol="BTCUSDT", funding_rate=Decimal("0.0001"))
+    }
+    run = await scanner.scan(
+        {"BTCUSDT"}, tickers, ConfigValues(timeframes=["30m"]), funding_rates
+    )
 
     assert len(client.calls) == 1
     symbol, period, requested_start_ms = client.calls[0]
@@ -206,6 +212,10 @@ async def test_signal_requires_both_volume_and_oi_and_is_published() -> None:
     assert published[0].technical_indicators["trend"]["ema"]["9"]["value"] is not None
     assert published[0].technical_indicators["momentum"]["macd"]["line"] is not None
     assert published[0].oi_lookback_minutes == 30
+    assert published[0].fund_flow_snapshot["net_taker_flow"] == "4000"
+    assert published[0].fund_flow_snapshot["taker_buy_ratio_percent"] == "60.0"
+    assert published[0].fund_flow_snapshot["regime"] == "new_longs"
+    assert published[0].funding_rate == Decimal("0.0001")
 
 
 @pytest.mark.asyncio

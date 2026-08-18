@@ -18,7 +18,7 @@ class ColumnarKlineRing:
     正常收盘和窗口淘汰常数时间推进指标；只有覆盖历史时才重建指标状态。
     """
 
-    _FLOAT_COLUMN_COUNT = 6
+    _FLOAT_COLUMN_COUNT = 7
     _INT_COLUMN_COUNT = 2
 
     def __init__(self, symbol: str, timeframe: str, capacity: int):
@@ -35,6 +35,7 @@ class ColumnarKlineRing:
         self.closes = array("d", [0.0]) * capacity
         self.volumes = array("d", [0.0]) * capacity
         self.quote_volumes = array("d", [0.0]) * capacity
+        self.taker_buy_quote_volumes = array("d", [0.0]) * capacity
         self.indicator_state = IncrementalTechnicalIndicators()
 
     @property
@@ -69,6 +70,7 @@ class ColumnarKlineRing:
         self.closes[index] = float(kline.close)
         self.volumes[index] = float(kline.volume)
         self.quote_volumes[index] = float(kline.quote_volume)
+        self.taker_buy_quote_volumes[index] = float(kline.taker_buy_quote_volume)
 
     def _read(self, index: int) -> KlineData:
         """把指定物理位置的紧凑数据恢复为系统边界使用的领域 K 线。"""
@@ -83,6 +85,7 @@ class ColumnarKlineRing:
             close=Decimal(str(self.closes[index])),
             volume=Decimal(str(self.volumes[index])),
             quote_volume=Decimal(str(self.quote_volumes[index])),
+            taker_buy_quote_volume=Decimal(str(self.taker_buy_quote_volumes[index])),
             is_closed=True,
         )
 

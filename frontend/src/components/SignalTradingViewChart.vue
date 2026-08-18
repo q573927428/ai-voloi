@@ -18,6 +18,7 @@ import { api, errorMessage } from '../api/client'
 import type { RealtimeKlineMessage, SignalChartCandle, SignalChartData } from '../types'
 import { resolvePricePrecision } from '../utils/price'
 import CoinIcon from './CoinIcon.vue'
+import ContractFundFlowChart from './ContractFundFlowChart.vue'
 
 /** K 线图表定位、标题及可选 Signal 快照信息。 */
 interface SignalTradingViewChartProps {
@@ -480,6 +481,7 @@ onUnmounted(() => {
     <div ref="container" class="chart-canvas" v-loading="loading" />
     <a class="chart-credit" href="https://www.tradingview.com/" target="_blank" rel="noreferrer">Charts by TradingView</a>
   </section>
+  <ContractFundFlowChart :symbol="symbol" :timeframe="selectedTimeframe" />
 </template>
 
 <style scoped>

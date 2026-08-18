@@ -28,6 +28,7 @@ def make_kline(index: int, closed: bool = True) -> KlineData:
         close=close,
         volume=Decimal("1000.125") + Decimal(index),
         quote_volume=Decimal("100000.875") + Decimal(index) * Decimal("100"),
+        taker_buy_quote_volume=Decimal("60000.525") + Decimal(index) * Decimal("60"),
         is_closed=closed,
     )
 
@@ -63,7 +64,7 @@ def test_columnar_ring_has_fixed_compact_storage_and_overwrites_oldest() -> None
     assert mutation == "appended"
     expected_open_times = [make_kline(index).open_time for index in range(1, 4)]
     assert [item.open_time for item in items] == expected_open_times
-    assert ring.allocated_bytes == before == 3 * 64
+    assert ring.allocated_bytes == before == 3 * 72
 
 
 def test_incremental_indicators_match_existing_batch_calculator() -> None:
@@ -131,4 +132,4 @@ async def test_retain_removes_inactive_markets_and_rejects_late_events() -> None
     assert accepted is False
     assert await cache.market_keys() == {("BTCUSDT", "15m")}
     assert await cache.symbols() == {"BTCUSDT"}
-    assert await cache.allocated_bytes() == 1000 * 64
+    assert await cache.allocated_bytes() == 1000 * 72

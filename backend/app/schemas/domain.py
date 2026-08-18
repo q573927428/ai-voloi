@@ -33,7 +33,18 @@ class KlineData(BaseModel):
     close: Decimal
     volume: Decimal
     quote_volume: Decimal
+    taker_buy_quote_volume: Decimal = Decimal("0")
     is_closed: bool
+
+
+class FundFlowKline(BaseModel):
+    """资金流计算使用的精简 K 线，保留主动买入报价成交额。"""
+
+    open_time: datetime
+    close_time: datetime
+    close: Decimal
+    quote_volume: Decimal
+    taker_buy_quote_volume: Decimal
 
 
 class EmaIndicatorRead(BaseModel):
@@ -147,9 +158,64 @@ class FundingRateData(BaseModel):
 
 
 class OIPoint(BaseModel):
-    """带时间戳的 Open Interest 观察点。"""
+    """带时间戳的 Open Interest 观察点，名义价值以合约报价资产计价。"""
     timestamp: datetime
     open_interest: Decimal
+    open_interest_value: Decimal | None = None
+
+
+class ContractFundFlowPoint(BaseModel):
+    """单个时间桶的主动成交资金流、价格及 OI 联合判断。"""
+
+    time: int
+    close: Decimal
+    quote_volume: Decimal
+    taker_buy_quote_volume: Decimal
+    taker_sell_quote_volume: Decimal
+    net_taker_flow: Decimal
+    price_change_percent: Decimal | None
+    open_interest: Decimal | None
+    open_interest_value: Decimal | None
+    open_interest_change: Decimal | None
+    open_interest_change_percent: Decimal | None
+    regime: str
+
+
+class ContractFundFlowSummary(BaseModel):
+    """资金流窗口汇总，用于展示净流、OI 与价格的总体方向。"""
+
+    net_taker_flow: Decimal
+    price_change_percent: Decimal | None
+    open_interest_change: Decimal | None
+    open_interest_change_percent: Decimal | None
+    regime: str
+
+
+class ContractFundFlowData(BaseModel):
+    """合约资金流图表响应，包含逐桶数据及整个窗口的综合状态。"""
+
+    symbol: str
+    timeframe: str
+    points: list[ContractFundFlowPoint]
+    summary: ContractFundFlowSummary
+
+
+class SignalFundFlowSnapshot(BaseModel):
+    """Signal 检测时刻不可变的主动资金流、价格与 OI 联合快照。"""
+
+    version: str = "1.0"
+    calculated_at: datetime
+    quote_volume: Decimal
+    taker_buy_quote_volume: Decimal
+    taker_sell_quote_volume: Decimal
+    net_taker_flow: Decimal
+    taker_buy_ratio_percent: Decimal | None
+    price_change_percent: Decimal | None
+    open_interest_change: Decimal
+    open_interest_change_percent: Decimal
+    regime: str
+
+
 
 
 class ConfigValues(BaseModel):
@@ -257,6 +323,7 @@ class SignalRead(BaseModel):
     ema14_slope_percent: Decimal | None
     ema50_slope_percent: Decimal | None
     technical_indicators: MarketIndicatorsRead | None = None
+    fund_flow_snapshot: SignalFundFlowSnapshot | None = None
     oldest_oi: Decimal
     newest_oi: Decimal
     oi_change_absolute: Decimal
@@ -267,6 +334,7 @@ class SignalRead(BaseModel):
     last_price: Decimal
     price_change_percent_24h: Decimal
     quote_volume_24h: Decimal
+    funding_rate: Decimal | None = None
     signal_type: str
 
 

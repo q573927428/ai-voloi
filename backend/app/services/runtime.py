@@ -76,6 +76,7 @@ class MonitorRuntime:
         self.websocket = BinanceWebSocketManager(settings, self.on_kline)
         self.active_symbols: set[str] = set()
         self.tickers: dict[str, TickerData] = {}
+        self.funding_rates: dict[str, FundingRateData] = {}
         self.config = ConfigValues()
         self._tasks: list[asyncio.Task] = []
         self._stop = asyncio.Event()
@@ -136,6 +137,7 @@ class MonitorRuntime:
         previous = self.active_symbols
         self.active_symbols = new_active
         self.tickers = tickers
+        self.funding_rates = funding_rates
         await self._persist_symbols(available, tickers, funding_rates)
         # 先清理退出池或已禁用周期，迟到的旧 WebSocket 事件也会被缓存层拒绝。
         await self.cache.retain(new_active, set(self.config.timeframes))
@@ -267,6 +269,7 @@ class MonitorRuntime:
                 close=row.close,
                 volume=row.volume,
                 quote_volume=row.quote_volume,
+                taker_buy_quote_volume=row.taker_buy_quote_volume or 0,
                 is_closed=row.is_closed,
             )
             for row in reversed(rows)
@@ -324,7 +327,10 @@ class MonitorRuntime:
             constraint="uq_kline_identity",
             set_={
                 field: getattr(statement.excluded, field)
-                for field in ("close_time", "open", "high", "low", "close", "volume", "quote_volume", "is_closed")
+                for field in (
+                    "close_time", "open", "high", "low", "close", "volume", "quote_volume",
+                    "taker_buy_quote_volume", "is_closed",
+                )
             },
         )
         async with self.session_factory() as session:
@@ -372,7 +378,12 @@ class MonitorRuntime:
                 logger.info("Skipping scheduled scan while collector status is %s", self.initialization_status)
                 continue
             try:
-                await self.scanner.scan(self.active_symbols, self.tickers, self.config)
+                await self.scanner.scan(
+                    self.active_symbols,
+                    self.tickers,
+                    self.config,
+                    self.funding_rates,
+                )
             except Exception:
                 logger.exception("Scheduled scan failed")
 

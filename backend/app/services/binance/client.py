@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 from app.core.config import Settings
-from app.schemas import FundingRateData, KlineData, OIPoint, TickerData
+from app.schemas import FundFlowKline, FundingRateData, KlineData, OIPoint, TickerData
 
 
 class RateLimiter:
@@ -111,7 +111,9 @@ class BinanceClient:
                 open_time=datetime.fromtimestamp(row[0] / 1000, timezone.utc),
                 close_time=datetime.fromtimestamp((row[6] + 1) / 1000, timezone.utc),
                 open=row[1], high=row[2], low=row[3], close=row[4], volume=row[5],
-                quote_volume=row[7], is_closed=row[6] < now_ms,
+                quote_volume=row[7],
+                taker_buy_quote_volume=row[10] if len(row) > 10 else 0,
+                is_closed=row[6] < now_ms,
             ) for row in data
         ]
 
@@ -121,7 +123,30 @@ class BinanceClient:
             "symbol": symbol, "period": period, "startTime": start_ms, "limit": limit
         })
         return [
-            OIPoint(timestamp=datetime.fromtimestamp(row["timestamp"] / 1000, timezone.utc), open_interest=row["sumOpenInterest"])
+            OIPoint(
+                timestamp=datetime.fromtimestamp(row["timestamp"] / 1000, timezone.utc),
+                open_interest=row["sumOpenInterest"],
+                open_interest_value=row.get("sumOpenInterestValue"),
+            )
+            for row in data
+        ]
+
+    async def fund_flow_klines(self, symbol: str, timeframe: str, limit: int) -> list[FundFlowKline]:
+        """读取资金流所需 K 线字段；主动卖出额由总额减主动买入额得到。"""
+        data = await self._get("/fapi/v1/klines", {
+            "symbol": symbol,
+            "interval": timeframe,
+            "limit": limit,
+        })
+        return [
+            FundFlowKline(
+                open_time=datetime.fromtimestamp(row[0] / 1000, timezone.utc),
+                close_time=datetime.fromtimestamp((row[6] + 1) / 1000, timezone.utc),
+                close=row[4],
+                quote_volume=row[7],
+                # Binance K 线下标 10 是 Taker Buy Quote Asset Volume。
+                taker_buy_quote_volume=row[10],
+            )
             for row in data
         ]
 

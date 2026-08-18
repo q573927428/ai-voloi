@@ -44,6 +44,7 @@ class Kline(Base, TimestampMixin):
     close: Mapped[Decimal] = mapped_column(NUM)
     volume: Mapped[Decimal] = mapped_column(NUM)
     quote_volume: Mapped[Decimal] = mapped_column(NUM)
+    taker_buy_quote_volume: Mapped[Decimal | None] = mapped_column(NUM)
     is_closed: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
@@ -90,6 +91,8 @@ class Signal(Base, TimestampMixin):
     ema50_slope_percent: Mapped[Decimal | None] = mapped_column(NUM)
     # 完整指标采用版本化结构保存，新增指标不再要求持续扩展 Signal 表列。
     technical_indicators: Mapped[dict | None] = mapped_column(JSONB)
+    # 主动资金流使用版本化快照，后续扩展指标不会持续增加 Signal 表列。
+    fund_flow_snapshot: Mapped[dict | None] = mapped_column(JSONB)
     oldest_oi: Mapped[Decimal] = mapped_column(NUM)
     newest_oi: Mapped[Decimal] = mapped_column(NUM)
     oi_change_absolute: Mapped[Decimal] = mapped_column(NUM)
@@ -101,6 +104,7 @@ class Signal(Base, TimestampMixin):
     last_price: Mapped[Decimal] = mapped_column(NUM)
     price_change_percent_24h: Mapped[Decimal] = mapped_column(NUM)
     quote_volume_24h: Mapped[Decimal] = mapped_column(NUM)
+    funding_rate: Mapped[Decimal | None] = mapped_column(NUM)
     signal_type: Mapped[str] = mapped_column(String(40), default="VOLUME_OI_ANOMALY")
     future_performance: Mapped["SignalFuturePerformance | None"] = relationship(back_populates="signal", uselist=False)
 

@@ -78,3 +78,45 @@ async def test_klines_passes_historical_end_time() -> None:
     assert len(klines) == 1
     assert klines[0].close == 101
     assert klines[0].close_time == datetime.fromtimestamp(expected_end_ms / 1000, timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_fund_flow_klines_parses_taker_buy_quote_volume() -> None:
+    """资金流 K 线必须保留总成交额和主动买入报价成交额。"""
+    client = BinanceClient.__new__(BinanceClient)
+
+    async def fake_get(path: str, params: dict) -> list[list]:
+        assert path == "/fapi/v1/klines"
+        assert params == {"symbol": "BTCUSDT", "interval": "1h", "limit": 120}
+        return [[
+            1_700_000_000_000, "100", "102", "99", "101", "5",
+            1_700_003_599_999, "505", 42, "2", "202", "0",
+        ]]
+
+    client._get = fake_get
+
+    klines = await client.fund_flow_klines("BTCUSDT", "1h", 120)
+
+    assert klines[0].quote_volume == Decimal("505")
+    assert klines[0].taker_buy_quote_volume == Decimal("202")
+
+
+@pytest.mark.asyncio
+async def test_open_interest_parses_notional_value() -> None:
+    """OI 历史应同时保留持仓数量和报价资产名义价值。"""
+    client = BinanceClient.__new__(BinanceClient)
+
+    async def fake_get(path: str, params: dict) -> list[dict]:
+        assert path == "/futures/data/openInterestHist"
+        return [{
+            "timestamp": 1_700_000_000_000,
+            "sumOpenInterest": "1000",
+            "sumOpenInterestValue": "101000",
+        }]
+
+    client._get = fake_get
+
+    points = await client.open_interest("BTCUSDT", "1h", 1_699_000_000_000)
+
+    assert points[0].open_interest == Decimal("1000")
+    assert points[0].open_interest_value == Decimal("101000")

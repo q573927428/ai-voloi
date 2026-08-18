@@ -30,6 +30,21 @@ const alignmentType = computed(() => ({
   insufficient_data: 'info',
 }[signal.value?.technical_indicators?.trend.ema_alignment ?? 'insufficient_data'] as 'success' | 'danger' | 'warning' | 'info'))
 const tone = (value?: string | null) => value == null ? '' : Number(value) >= 0 ? 'positive' : 'negative'
+const fundFlowRegimeText: Record<string, string> = {
+  new_longs: '新增多头',
+  new_shorts: '新增空头',
+  short_covering: '空头回补',
+  long_closing: '多头平仓',
+  mixed: '方向分歧',
+  insufficient_data: '数据不足',
+}
+
+/** 资金费率使用百分比口径展示，保留小费率识别所需精度。 */
+function fundingRateText(value: string | null): string {
+  if (value == null) return '—'
+  const percent = Number(value) * 100
+  return `${percent > 0 ? '+' : ''}${percent.toFixed(4)}%`
+}
 
 /** 未来价格变化指标采用显式标签和顺序，避免向页面暴露 API 字段名。 */
 interface FuturePerformanceMetric {
@@ -86,7 +101,19 @@ onMounted(load)
     <section class="detail-section"><h2>K 线快照 · <MarketSymbol :symbol="signal.symbol" :is-tradfi="signal.is_tradfi" /> / {{ signal.timeframe }}</h2><div class="kv"><span>检测时间</span><strong>{{ dt(signal.detected_at) }}</strong></div><div class="kv"><span>K 线区间</span><strong>{{ dt(signal.open_time) }} - {{ dt(signal.close_time) }}</strong></div><div class="kv"><span>OHLC</span><strong>{{ n(signal.open) }} / {{ n(signal.high) }} / {{ n(signal.low) }} / {{ n(signal.current_price) }}</strong></div><div class="kv"><span>形成进度</span><strong>{{ Number(signal.progress_percent).toFixed(2) }}%</strong></div><div class="kv"><span>Quote Volume</span><strong>{{ n(signal.current_quote_volume) }}</strong></div></section>
     <section class="detail-section"><h2>成交量异常</h2><div class="kv"><span>当前成交量</span><strong>{{ n(signal.current_volume) }}</strong></div><div class="kv"><span>预计完整成交量</span><strong>{{ n(signal.estimated_volume) }}</strong></div><div class="kv"><span>Volume EMA{{ signal.volume_ema_period }}</span><strong>{{ n(signal.volume_ema) }}</strong></div><div class="kv"><span>触发阈值</span><strong>{{ n(signal.volume_multiplier) }}x</strong></div><div class="kv"><span>Volume Ratio</span><strong class="positive">{{ Number(signal.volume_ratio).toFixed(3) }}x</strong></div></section>
     <section class="detail-section"><h2>Open Interest</h2><div class="kv"><span>观察窗口</span><strong>{{ signal.oi_lookback_minutes == null ? '旧口径（K 线开盘起）' : `${signal.oi_lookback_minutes} 分钟` }}</strong></div><div class="kv"><span>起点 / 时间</span><strong>{{ n(signal.oldest_oi) }} · {{ dt(signal.oldest_timestamp) }}</strong></div><div class="kv"><span>终点 / 时间</span><strong>{{ n(signal.newest_oi) }} · {{ dt(signal.newest_timestamp) }}</strong></div><div class="kv"><span>绝对变化</span><strong>{{ n(signal.oi_change_absolute) }}</strong></div><div class="kv"><span>变化率</span><strong class="positive">+{{ Number(signal.oi_change_percent).toFixed(4) }}%</strong></div></section>
-    <section class="detail-section"><h2>24h 市场快照</h2><div class="kv"><span>最新价格</span><strong>{{ n(signal.last_price) }}</strong></div><div class="kv"><span>价格变化</span><strong :class="Number(signal.price_change_percent_24h) >= 0 ? 'positive' : 'negative'">{{ n(signal.price_change_percent_24h) }}%</strong></div><div class="kv"><span>Quote Volume</span><strong>{{ n(signal.quote_volume_24h) }}</strong></div></section>
+    <section class="detail-section"><h2>24h 市场快照</h2><div class="kv"><span>最新价格</span><strong>{{ n(signal.last_price) }}</strong></div><div class="kv"><span>价格变化</span><strong :class="Number(signal.price_change_percent_24h) >= 0 ? 'positive' : 'negative'">{{ n(signal.price_change_percent_24h) }}%</strong></div><div class="kv"><span>Quote Volume</span><strong>{{ n(signal.quote_volume_24h) }}</strong></div><div class="kv"><span>资金费率</span><strong :class="tone(signal.funding_rate)">{{ fundingRateText(signal.funding_rate) }}</strong></div></section>
+    <section class="detail-section">
+      <h2>合约资金流快照</h2>
+      <template v-if="signal.fund_flow_snapshot">
+        <div class="kv"><span>市场状态</span><strong>{{ fundFlowRegimeText[signal.fund_flow_snapshot.regime] ?? signal.fund_flow_snapshot.regime }}</strong></div>
+        <div class="kv"><span>主动净流</span><strong :class="tone(signal.fund_flow_snapshot.net_taker_flow)">{{ n(signal.fund_flow_snapshot.net_taker_flow) }} USDT</strong></div>
+        <div class="kv"><span>主动买入 / 卖出</span><strong>{{ n(signal.fund_flow_snapshot.taker_buy_quote_volume) }} / {{ n(signal.fund_flow_snapshot.taker_sell_quote_volume) }}</strong></div>
+        <div class="kv"><span>主动买入占比</span><strong>{{ n(signal.fund_flow_snapshot.taker_buy_ratio_percent) }}%</strong></div>
+        <div class="kv"><span>价格 / OI 变化</span><strong>{{ n(signal.fund_flow_snapshot.price_change_percent) }}% / {{ n(signal.fund_flow_snapshot.open_interest_change_percent) }}%</strong></div>
+        <div class="kv"><span>计算时间 / 版本</span><strong>{{ dt(signal.fund_flow_snapshot.calculated_at) }} · {{ signal.fund_flow_snapshot.version }}</strong></div>
+      </template>
+      <div v-else class="indicator-meta">旧 Signal 未保存资金流快照</div>
+    </section>
     <section class="detail-section indicator-section">
       <div class="indicator-head">
         <h2>技术指标 · 完整 K 线</h2>

@@ -145,6 +145,7 @@ export interface SignalSnapshot {
   ema14_slope_percent: string | null
   ema50_slope_percent: string | null
   technical_indicators: MarketIndicators | null
+  fund_flow_snapshot: SignalFundFlowSnapshot | null
   oldest_oi: string
   newest_oi: string
   oi_change_absolute: string
@@ -155,8 +156,24 @@ export interface SignalSnapshot {
   last_price: string
   price_change_percent_24h: string
   quote_volume_24h: string
+  funding_rate: string | null
   signal_type: string
   future_performance?: SignalFuturePerformance | null
+}
+
+/** Signal 检测时刻固化的主动资金流与 OI 联合状态。 */
+export interface SignalFundFlowSnapshot {
+  version: string
+  calculated_at: string
+  quote_volume: string
+  taker_buy_quote_volume: string
+  taker_sell_quote_volume: string
+  net_taker_flow: string
+  taker_buy_ratio_percent: string | null
+  price_change_percent: string | null
+  open_interest_change: string
+  open_interest_change_percent: string
+  regime: FundFlowRegime
 }
 
 /** TradingView 图表中的 K 线和六组可选 EMA 数据点。 */
@@ -191,6 +208,47 @@ export interface RealtimeChartData {
 export interface RealtimeKlineMessage {
   type: 'kline'
   data: SignalChartCandle
+}
+
+/** 单个合约资金流时间桶，联合主动成交、价格和 Open Interest。 */
+export interface ContractFundFlowPoint {
+  time: number
+  close: string
+  quote_volume: string
+  taker_buy_quote_volume: string
+  taker_sell_quote_volume: string
+  net_taker_flow: string
+  price_change_percent: string | null
+  open_interest: string | null
+  open_interest_value: string | null
+  open_interest_change: string | null
+  open_interest_change_percent: string | null
+  regime: FundFlowRegime
+}
+
+/** 资金流窗口的价格、持仓与主动成交汇总。 */
+export interface ContractFundFlowSummary {
+  net_taker_flow: string
+  price_change_percent: string | null
+  open_interest_change: string | null
+  open_interest_change_percent: string | null
+  regime: FundFlowRegime
+}
+
+export type FundFlowRegime =
+  | 'new_longs'
+  | 'new_shorts'
+  | 'short_covering'
+  | 'long_closing'
+  | 'mixed'
+  | 'insufficient_data'
+
+/** 合约资金流组件接口响应。 */
+export interface ContractFundFlowData {
+  symbol: string
+  timeframe: string
+  points: ContractFundFlowPoint[]
+  summary: ContractFundFlowSummary
 }
 
 /** Signal 分页响应。 */

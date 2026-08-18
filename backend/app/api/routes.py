@@ -1,5 +1,6 @@
 """HTTP 与 WebSocket API 路由。"""
 
+import asyncio
 import logging
 from datetime import datetime, time, timedelta, timezone
 from uuid import UUID
@@ -13,6 +14,7 @@ from app.core.database import get_db
 from app.models import Kline, ScannerRun, Signal, Symbol
 from app.schemas import (
     ActiveSymbolRead,
+    ContractFundFlowData,
     ConfigUpdate,
     ConfigValues,
     DashboardStats,
@@ -31,6 +33,7 @@ from app.services.cache.technical_indicators import (
     calculate_technical_indicators,
 )
 from app.services.chart import build_chart_candles, latest_ema_values
+from app.services.fund_flow import OI_PERIOD_SECONDS, build_contract_fund_flow
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -333,6 +336,36 @@ async def realtime_chart(
     )
 
 
+@router.get("/markets/{symbol}/{timeframe}/fund-flow", response_model=ContractFundFlowData)
+async def contract_fund_flow(
+    symbol: str,
+    timeframe: str,
+    request: Request,
+    limit: int = Query(120, ge=50, le=500),
+) -> ContractFundFlowData:
+    """返回主动买卖成交额、价格与 OI 变化对齐后的合约资金流窗口。"""
+    normalized_symbol = symbol.upper()
+    runtime = request.app.state.runtime
+    if timeframe not in runtime.config.timeframes:
+        raise HTTPException(status_code=404, detail="Unsupported timeframe")
+    period_seconds = OI_PERIOD_SECONDS.get(timeframe)
+    if period_seconds is None:
+        raise HTTPException(status_code=422, detail="Open Interest does not support this timeframe")
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    start_ms = now_ms - period_seconds * (limit + 2) * 1000
+    try:
+        klines, oi_points = await asyncio.gather(
+            runtime.client.fund_flow_klines(normalized_symbol, timeframe, limit),
+            runtime.client.open_interest(normalized_symbol, timeframe, start_ms, limit=min(limit + 2, 500)),
+        )
+    except Exception as exc:
+        logger.exception("Failed to load contract fund flow for %s %s", normalized_symbol, timeframe)
+        raise HTTPException(status_code=502, detail="Binance fund flow data is temporarily unavailable") from exc
+    if not klines:
+        raise HTTPException(status_code=404, detail="Market fund flow data not found")
+    return build_contract_fund_flow(normalized_symbol, timeframe, klines, oi_points)
+
+
 @router.get("/markets/{symbol}/{timeframe}/indicators", response_model=MarketIndicatorsRead)
 async def market_indicators(
     symbol: str,
@@ -378,6 +411,7 @@ async def market_indicators(
             close=row.close,
             volume=row.volume,
             quote_volume=row.quote_volume,
+            taker_buy_quote_volume=row.taker_buy_quote_volume or 0,
             is_closed=row.is_closed,
         )
         for row in reversed(rows)
@@ -417,7 +451,12 @@ async def run_scanner(request: Request) -> dict:
         # 手动入口与定时任务采用同一完整性门槛，避免初始化中途写入不完整 Signal。
         raise HTTPException(status_code=503, detail="Collector is not ready")
     try:
-        run = await runtime.scanner.scan(runtime.active_symbols, runtime.tickers, runtime.config)
+        run = await runtime.scanner.scan(
+            runtime.active_symbols,
+            runtime.tickers,
+            runtime.config,
+            runtime.funding_rates,
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"id": run.id, "signal_count": run.signal_count, "duration_ms": run.duration_ms}

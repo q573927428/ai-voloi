@@ -10,10 +10,11 @@ from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from app.models import OpenInterestSnapshot, ScannerRun, Signal, SignalFuturePerformance
-from app.schemas import ConfigValues, KlineData, OIPoint, TickerData
+from app.schemas import ConfigValues, FundingRateData, KlineData, OIPoint, TickerData
 from app.services.binance.client import BinanceClient
 from app.services.cache.kline_cache import KlineCache, kline_progress
 from app.services.cache.technical_indicators import TechnicalIndicators, build_indicator_response
+from app.services.fund_flow import build_signal_fund_flow_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -82,8 +83,15 @@ class Scanner:
             )
         return {(symbol, timeframe, open_time) for symbol, timeframe, open_time in rows.all()}
 
-    async def scan(self, symbols: set[str], tickers: dict[str, TickerData], config: ConfigValues) -> ScannerRun:
+    async def scan(
+        self,
+        symbols: set[str],
+        tickers: dict[str, TickerData],
+        config: ConfigValues,
+        funding_rates: dict[str, FundingRateData] | None = None,
+    ) -> ScannerRun:
         """扫描活跃池并持久化审计记录、OI 快照与合格 Signal。"""
+        funding_rates = funding_rates or {}
         if self._lock.locked():
             raise RuntimeError("Scanner is already running")
         async with self._lock:
@@ -168,6 +176,13 @@ class Scanner:
                     ticker = tickers.get(symbol)
                     if not ticker:
                         continue
+                    fund_flow_snapshot = build_signal_fund_flow_snapshot(
+                        current,
+                        started,
+                        change,
+                        change_percent,
+                    )
+                    funding_rate = funding_rates.get(symbol)
                     signal_models.append(Signal(
                         symbol=symbol, timeframe=timeframe, detected_at=started,
                         open_time=current.open_time, close_time=current.close_time,
@@ -184,12 +199,15 @@ class Scanner:
                         technical_indicators=build_indicator_response(
                             symbol, timeframe, indicators
                         ).model_dump(mode="json"),
+                        fund_flow_snapshot=fund_flow_snapshot.model_dump(mode="json"),
                         oldest_oi=oldest.open_interest, newest_oi=newest.open_interest,
                         oi_change_absolute=change, oi_change_percent=change_percent,
                         oi_lookback_minutes=oi_lookback_minutes,
                         oldest_timestamp=oldest.timestamp, newest_timestamp=newest.timestamp,
                         last_price=ticker.last_price, price_change_percent_24h=ticker.price_change_percent,
-                        quote_volume_24h=ticker.quote_volume, signal_type="VOLUME_OI_ANOMALY",
+                        quote_volume_24h=ticker.quote_volume,
+                        funding_rate=funding_rate.funding_rate if funding_rate else None,
+                        signal_type="VOLUME_OI_ANOMALY",
                     ))
                     existing_signal_keys.add(signal_key)
                 except Exception as exc:

@@ -70,7 +70,7 @@ class BinanceWebSocketManager:
                         await self.on_kline(KlineData(
                             symbol=k["s"], timeframe=k["i"], open_time=k["t"], close_time=k["T"] + 1,
                             open=k["o"], high=k["h"], low=k["l"], close=k["c"], volume=k["v"],
-                            quote_volume=k["q"], is_closed=k["x"],
+                            quote_volume=k["q"], taker_buy_quote_volume=k["Q"], is_closed=k["x"],
                         ))
             except asyncio.CancelledError:
                 raise
