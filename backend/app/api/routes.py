@@ -232,12 +232,14 @@ async def signal_detail(signal_id: UUID, session: AsyncSession = Depends(get_db)
     )).scalar_one_or_none()
     if not signal:
         raise HTTPException(status_code=404, detail="Signal not found")
-    contract_type = await session.scalar(
-        select(Symbol.contract_type).where(Symbol.symbol == signal.symbol)
-    )
+    market = (await session.execute(
+        select(Symbol.contract_type, Symbol.is_active).where(Symbol.symbol == signal.symbol)
+    )).one_or_none()
     snapshot = SignalRead.model_validate(signal).model_copy(
-        update={"is_tradfi": contract_type == "TRADIFI_PERPETUAL"}
+        update={"is_tradfi": bool(market and market.contract_type == "TRADIFI_PERPETUAL")}
     ).model_dump(mode="json")
+    # 当前活跃状态属于查看时信息，不写入不可变 Signal 快照模型。
+    snapshot["is_currently_active"] = bool(market and market.is_active)
     performance = signal.future_performance
     snapshot["future_performance"] = {
         key: str(getattr(performance, key)) if getattr(performance, key) is not None else None
@@ -313,7 +315,17 @@ async def realtime_chart(
     runtime = request.app.state.runtime
     if timeframe not in runtime.config.timeframes:
         raise HTTPException(status_code=404, detail="Unsupported timeframe")
-    if runtime.websocket.is_stale(normalized_symbol, timeframe):
+    if normalized_symbol not in runtime.active_symbols:
+        # 冷门市场只在用户查看期间按需读取，不能写入全局缓存或恢复扫描订阅。
+        on_demand = await runtime.client.klines(normalized_symbol, timeframe, history_limit)
+        if not on_demand:
+            raise HTTPException(status_code=404, detail="Market Kline data not found")
+        return RealtimeChartData(
+            symbol=normalized_symbol,
+            timeframe=timeframe,
+            candles=build_chart_candles(on_demand),
+        )
+    if runtime.is_chart_stream_stale(normalized_symbol, timeframe):
         try:
             # 首屏响应前修复最近窗口，避免数据库历史与当前缓存之间缺少已收盘 K 线。
             await runtime.repair_market_klines(normalized_symbol, timeframe)
@@ -507,13 +519,26 @@ async def kline_stream(websocket: WebSocket, symbol: str, timeframe: str) -> Non
     normalized_symbol = symbol.upper()
     runtime = websocket.app.state.runtime
     broadcaster = websocket.app.state.kline_broadcaster
-    if normalized_symbol not in runtime.active_symbols or timeframe not in runtime.config.timeframes:
+    if timeframe not in runtime.config.timeframes:
         await websocket.accept()
-        await websocket.close(code=1008, reason="Market is not active")
+        await websocket.close(code=1008, reason="Timeframe is unavailable")
         return
-    await broadcaster.connect(websocket, normalized_symbol, timeframe)
     try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        await broadcaster.disconnect(websocket, normalized_symbol, timeframe)
+        # 非活跃市场在首个查看者进入时初始化临时缓存，并共享一条上游 Binance WebSocket。
+        await runtime.open_chart_stream(normalized_symbol, timeframe)
+    except Exception:
+        logger.exception("Failed to open temporary chart stream for %s %s", normalized_symbol, timeframe)
+        await websocket.accept()
+        await websocket.close(code=1011, reason="Unable to initialize market stream")
+        return
+    try:
+        await broadcaster.connect(websocket, normalized_symbol, timeframe)
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            await broadcaster.disconnect(websocket, normalized_symbol, timeframe)
+    finally:
+        await runtime.close_chart_stream(normalized_symbol, timeframe)

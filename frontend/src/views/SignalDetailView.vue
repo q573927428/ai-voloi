@@ -110,6 +110,7 @@ onMounted(load)
     :symbol="signal.symbol"
     :timeframe="signal.timeframe"
     :is-tradfi="signal.is_tradfi"
+    :is-active="signal.is_currently_active"
   />
   <div v-if="signal" class="detail-grid" v-loading="loading">
     <section class="detail-section"><h2>K 线快照 · <MarketSymbol :symbol="signal.symbol" :is-tradfi="signal.is_tradfi" /> / {{ signal.timeframe }}</h2><div class="kv"><span>检测时间</span><strong>{{ dt(signal.detected_at) }}</strong></div><div class="kv"><span>K 线区间</span><strong>{{ dt(signal.open_time) }}<br>{{ dt(signal.close_time) }}</strong></div><div class="kv"><span>OHLC</span><strong>{{ n(signal.open) }} / {{ n(signal.high) }} / {{ n(signal.low) }} / {{ n(signal.current_price) }}</strong></div><div class="kv"><span>形成进度</span><strong>{{ Number(signal.progress_percent).toFixed(2) }}%</strong></div><div class="kv"><span>Quote Volume</span><strong>{{ n(signal.current_quote_volume) }}</strong></div></section>

@@ -28,9 +28,14 @@ interface SignalTradingViewChartProps {
   symbol: string
   timeframe: string
   isTradfi?: boolean
+  /** 当前是否仍属于活跃池；非活跃 Signal 会提示实时连接为临时订阅。 */
+  isActive?: boolean
 }
 
-const props = withDefaults(defineProps<SignalTradingViewChartProps>(), { isTradfi: false })
+const props = withDefaults(defineProps<SignalTradingViewChartProps>(), {
+  isTradfi: false,
+  isActive: true,
+})
 const container = ref<HTMLDivElement | null>(null)
 const loading = ref(true)
 const error = ref('')
@@ -44,6 +49,7 @@ const latestCandle = ref<SignalChartCandle | null>(null)
 const hoveredCandle = ref<SignalChartCandle | null>(null)
 const candleCount = ref(0)
 const latestPriceDirection = ref<'up' | 'down' | 'flat'>('flat')
+// 详情页优先展示当前行情，检测时刻的不可变数据仍可通过模式切换随时还原。
 const mode = ref<'snapshot' | 'realtime'>('realtime')
 const liveConnected = ref(false)
 const selectedTimeframe = ref(props.timeframe)
@@ -320,9 +326,14 @@ function connectRealtime() {
     const message = JSON.parse(event.data) as RealtimeKlineMessage
     if (message.type === 'kline' && mode.value === 'realtime') updateRealtimeCandle(message.data)
   }
-  socket.onclose = () => {
+  socket.onclose = (event) => {
     liveConnected.value = false
     liveSocket = null
+    // 策略拒绝表示市场或周期不可用，继续自动重连只会制造连接风暴。
+    if (event.code === 1008) {
+      error.value = event.reason || '当前市场实时行情不可用'
+      return
+    }
     if (!disposed && mode.value === 'realtime') {
       reconnectTimer = window.setTimeout(connectRealtime, 3000)
     }
@@ -475,7 +486,13 @@ onUnmounted(() => {
   <section class="chart-band">
     <div class="chart-head">
       <div class="chart-primary">
-        <div class="chart-copy"><h2><CoinIcon :symbol="symbol" :size="16" />{{ symbol }}<el-tooltip v-if="isTradfi" content="TradFi"><el-tag class="chart-tradfi" type="warning" effect="plain" size="small">T</el-tag></el-tooltip><span>· {{ selectedTimeframe }}</span></h2><span>{{ mode === 'realtime' ? '实时行情' : '检测时刻快照' }} · UTC+8 · 共 {{ candleCount }} 根 K 线</span></div>
+        <div class="chart-copy">
+          <h2><CoinIcon :symbol="symbol" :size="16" />{{ symbol }}<el-tooltip v-if="isTradfi" content="TradFi"><el-tag class="chart-tradfi" type="warning" effect="plain" size="small">T</el-tag></el-tooltip><span>· {{ selectedTimeframe }}</span></h2>
+          <span class="chart-meta">
+            {{ mode === 'realtime' ? '实时' : '快照' }} · UTC+8 · 共 {{ candleCount }} 根 K 线
+            <el-tag v-if="!isActive" type="warning" effect="plain" size="small">非</el-tag>
+          </span>
+        </div>
         <div v-if="displayedCandle" class="market-strip">
           <div class="market-item latest"><span>{{ hoveredCandle ? '光标价格' : '最新价格' }}</span><strong :class="hoveredCandle ? '' : latestPriceDirection">{{ formatMarketPrice(displayedCandle.close) }}</strong></div>
           <div class="market-item"><span>变化</span><strong :class="candleChangePercent(displayedCandle) >= 0 ? 'up' : 'down'">{{ candleChangePercent(displayedCandle) >= 0 ? '+' : '' }}{{ candleChangePercent(displayedCandle).toFixed(2) }}%</strong></div>
@@ -535,6 +552,8 @@ onUnmounted(() => {
 .chart-head h2 { margin: 0 0 4px; font-size: 16px; letter-spacing: 0; display: flex; align-items: center; gap: 5px; }
 .chart-tradfi { font-weight: 650; }
 .chart-copy > span { color: #7d8997; font-size: 12px; }
+.chart-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.chart-meta :deep(.el-tag) { letter-spacing: 0; }
 .chart-primary { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; }
 .chart-copy { flex: 0 0 auto; }
 .chart-tools { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 22px; }

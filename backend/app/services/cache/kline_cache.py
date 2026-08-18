@@ -261,6 +261,10 @@ class KlineCache:
     async def retain(self, symbols: set[str], timeframes: set[str]) -> None:
         """仅保留当前活跃交易对与启用周期，并拒绝退出市场的迟到事件。"""
         desired = {(symbol, timeframe) for symbol in symbols for timeframe in timeframes}
+        await self.retain_markets(desired)
+
+    async def retain_markets(self, desired: set[tuple[str, str]]) -> None:
+        """按精确市场周期集合保留缓存，支持非活跃交易对的临时单周期订阅。"""
         async with self._lock:
             self._allowed_markets = desired
             for symbol in list(self._closed):

@@ -121,6 +121,8 @@ export interface SignalSnapshot {
   id: string
   symbol: string
   is_tradfi: boolean
+  /** 当前查看时是否仍在活跃池，不属于检测时刻的不可变快照。 */
+  is_currently_active: boolean
   timeframe: string
   detected_at: string
   open_time: string

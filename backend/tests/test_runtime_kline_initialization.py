@@ -1,11 +1,13 @@
 """运行时 K 线数据库恢复与增量补齐测试。"""
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
 
+import app.services.runtime as runtime_module
 from app.schemas import KlineData
 from app.services.cache.kline_cache import KlineCache
 from app.services.runtime import (
@@ -33,6 +35,27 @@ class FakeKlineClient:
         """返回下一批 K 线并保留请求游标供断言。"""
         self.calls.append((symbol, timeframe, limit, start_ms))
         return self.batches.pop(0)
+
+
+class FakeTemporaryWebSocketManager:
+    """记录临时 Binance WebSocket 的启动和停止，避免测试访问外部网络。"""
+
+    instances: list["FakeTemporaryWebSocketManager"] = []
+
+    def __init__(self, settings, on_kline):
+        self.settings = settings
+        self.on_kline = on_kline
+        self.starts: list[tuple[set[str], list[str]]] = []
+        self.stop_count = 0
+        self.instances.append(self)
+
+    async def start(self, symbols: set[str], timeframes: list[str]) -> None:
+        """记录临时订阅市场。"""
+        self.starts.append((symbols, timeframes))
+
+    async def stop(self) -> None:
+        """记录上游连接被释放。"""
+        self.stop_count += 1
 
 
 def make_kline(start: datetime, volume: str, closed: bool = True) -> KlineData:
@@ -209,3 +232,36 @@ async def test_chart_repair_processes_overlap_closed_candle_and_current_in_order
 
     assert processed == [overlap, missing, current]
     assert runtime.client.calls == [("BTCUSDT", "15m", 20, None)]
+
+
+@pytest.mark.asyncio
+async def test_inactive_chart_stream_is_shared_and_removed_after_last_viewer(monkeypatch) -> None:
+    """非活跃市场只建立一条共享临时连接，最后一个查看者离开后完整释放。"""
+    start = datetime(2026, 8, 18, tzinfo=timezone.utc)
+    history = [make_kline(start, "10"), make_kline(start + timedelta(minutes=15), "2", False)]
+    runtime, _ = make_runtime([], [history])
+    runtime.active_symbols = {"ETHUSDT"}
+    runtime.config = SimpleNamespace(timeframes=["15m"])
+    runtime._chart_stream_lock = asyncio.Lock()
+    runtime._chart_stream_subscribers = {}
+    runtime._temporary_websockets = {}
+    FakeTemporaryWebSocketManager.instances = []
+    monkeypatch.setattr(runtime_module, "BinanceWebSocketManager", FakeTemporaryWebSocketManager)
+
+    await runtime.open_chart_stream("BTCUSDT", "15m")
+    await runtime.open_chart_stream("BTCUSDT", "15m")
+
+    assert runtime._chart_stream_subscribers[("BTCUSDT", "15m")] == 2
+    assert len(FakeTemporaryWebSocketManager.instances) == 1
+    manager = FakeTemporaryWebSocketManager.instances[0]
+    assert manager.starts == [({"BTCUSDT"}, ["15m"])]
+    assert ("BTCUSDT", "15m") in await runtime.cache.market_keys()
+    assert runtime.active_symbols == {"ETHUSDT"}
+
+    await runtime.close_chart_stream("BTCUSDT", "15m")
+    assert manager.stop_count == 0
+
+    await runtime.close_chart_stream("BTCUSDT", "15m")
+    assert manager.stop_count == 1
+    assert ("BTCUSDT", "15m") not in await runtime.cache.market_keys()
+    assert runtime.active_symbols == {"ETHUSDT"}

@@ -90,6 +90,9 @@ class MonitorRuntime:
         self.config = ConfigValues()
         self._tasks: list[asyncio.Task] = []
         self._stop = asyncio.Event()
+        self._chart_stream_lock = asyncio.Lock()
+        self._chart_stream_subscribers: dict[tuple[str, str], int] = {}
+        self._temporary_websockets: dict[tuple[str, str], BinanceWebSocketManager] = {}
         self.initialization_status = "idle"
 
     async def start(self) -> None:
@@ -109,6 +112,12 @@ class MonitorRuntime:
             task.cancel()
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
+        async with self._chart_stream_lock:
+            temporary = list(self._temporary_websockets.values())
+            self._temporary_websockets.clear()
+            self._chart_stream_subscribers.clear()
+        for manager in temporary:
+            await manager.stop()
         await self.websocket.stop()
         await self.client.close()
 
@@ -151,19 +160,99 @@ class MonitorRuntime:
         self.active_since_by_symbol = await self._persist_symbols(
             available, tickers, funding_rates
         )
-        # 先清理退出池或已禁用周期，迟到的旧 WebSocket 事件也会被缓存层拒绝。
-        await self.cache.retain(new_active, set(self.config.timeframes))
-        desired_markets = {
+        active_markets = {
             (symbol, timeframe)
             for symbol in new_active
             for timeframe in self.config.timeframes
         }
-        missing_markets = desired_markets - await self.cache.market_keys()
+        # 图表临时订阅不进入 active_symbols，但交易池刷新时必须保留其精确缓存键。
+        async with self._chart_stream_lock:
+            chart_markets = set(self._chart_stream_subscribers)
+            await self.cache.retain_markets(active_markets | chart_markets)
+            await self._sync_temporary_websockets_locked()
+        # 常驻市场全量初始化可能耗时较长，不能阻塞用户打开临时图表连接。
+        missing_markets = active_markets - await self.cache.market_keys()
         if missing_markets:
             await self._initialize_markets(missing_markets)
         if new_active != previous or set(self.config.timeframes) != previous_timeframes:
             await self.websocket.start(new_active, self.config.timeframes)
         self.initialization_status = "ready"
+
+    def _active_market_keys(self) -> set[tuple[str, str]]:
+        """展开活跃交易池的全部启用周期，供临时图表缓存与常驻缓存合并。"""
+        return {
+            (symbol, timeframe)
+            for symbol in self.active_symbols
+            for timeframe in self.config.timeframes
+        }
+
+    async def _initialize_temporary_market(self, symbol: str, timeframe: str) -> None:
+        """用 REST 初始化临时图表缓存，不持久化且不改变活跃池成员。"""
+        klines = await self.client.klines(
+            symbol,
+            timeframe,
+            self.settings.kline_history_limit,
+        )
+        if not klines:
+            raise RuntimeError(f"No Kline data for {symbol} {timeframe}")
+        await self.cache.initialize(symbol, timeframe, klines)
+
+    async def _sync_temporary_websockets_locked(self) -> None:
+        """使临时 Binance 订阅与当前查看者、活跃池状态保持一致。"""
+        desired = {
+            key
+            for key in self._chart_stream_subscribers
+            if key[0] not in self.active_symbols
+        }
+        for key in set(self._temporary_websockets) - desired:
+            manager = self._temporary_websockets.pop(key)
+            await manager.stop()
+        for symbol, timeframe in desired - set(self._temporary_websockets):
+            if (symbol, timeframe) not in await self.cache.market_keys():
+                await self._initialize_temporary_market(symbol, timeframe)
+            manager = BinanceWebSocketManager(self.settings, self.on_kline)
+            await manager.start({symbol}, [timeframe])
+            self._temporary_websockets[(symbol, timeframe)] = manager
+
+    async def open_chart_stream(self, symbol: str, timeframe: str) -> None:
+        """登记图表查看者，并按需建立非活跃市场的共享临时 Binance WebSocket。"""
+        key = (symbol, timeframe)
+        async with self._chart_stream_lock:
+            self._chart_stream_subscribers[key] = self._chart_stream_subscribers.get(key, 0) + 1
+            try:
+                await self.cache.retain_markets(
+                    self._active_market_keys() | set(self._chart_stream_subscribers)
+                )
+                await self._sync_temporary_websockets_locked()
+            except Exception:
+                count = self._chart_stream_subscribers[key] - 1
+                if count:
+                    self._chart_stream_subscribers[key] = count
+                else:
+                    self._chart_stream_subscribers.pop(key, None)
+                await self.cache.retain_markets(
+                    self._active_market_keys() | set(self._chart_stream_subscribers)
+                )
+                raise
+
+    async def close_chart_stream(self, symbol: str, timeframe: str) -> None:
+        """释放图表查看者；最后一个查看者离开时停止并清理临时行情。"""
+        key = (symbol, timeframe)
+        async with self._chart_stream_lock:
+            count = self._chart_stream_subscribers.get(key, 0)
+            if count <= 1:
+                self._chart_stream_subscribers.pop(key, None)
+            else:
+                self._chart_stream_subscribers[key] = count - 1
+            await self._sync_temporary_websockets_locked()
+            await self.cache.retain_markets(
+                self._active_market_keys() | set(self._chart_stream_subscribers)
+            )
+
+    def is_chart_stream_stale(self, symbol: str, timeframe: str) -> bool:
+        """按市场实际所属的常驻或临时连接判断最近推送是否停滞。"""
+        manager = self._temporary_websockets.get((symbol, timeframe), self.websocket)
+        return manager.is_stale(symbol, timeframe)
 
     async def apply_config(self, config: ConfigValues) -> None:
         """配置修改后立即重新筛选池，避免等待下一次定时刷新。"""
@@ -298,6 +387,7 @@ class MonitorRuntime:
 
     async def on_kline(self, kline: KlineData) -> None:
         """接收实时 K 线，并在发现收盘 K 线缺口时使用 REST 补齐。"""
+        is_active = kline.symbol in self.active_symbols
         if kline.is_closed:
             latest_closed = await self.cache.latest_closed(kline.symbol, kline.timeframe)
             if latest_closed and latest_closed.close_time < kline.open_time:
@@ -306,9 +396,11 @@ class MonitorRuntime:
                 for item in repaired:
                     if item.is_closed and item.open_time > latest_closed.open_time:
                         await self.cache.update(item)
-                await self._persist_closed_klines(repaired)
+                # 临时查看行情不应扩展持久化采集范围，只有活跃池数据写入数据库。
+                if is_active:
+                    await self._persist_closed_klines(repaired)
         closed_now = await self.cache.update(kline)
-        if closed_now:
+        if closed_now and is_active:
             await self._persist_closed_klines([kline])
         if await self.kline_broadcaster.has_subscribers(kline.symbol, kline.timeframe):
             # 仅在详情页订阅存在时计算逐根 EMA，避免给全市场高频 K 线链路增加固定开销。
@@ -363,7 +455,7 @@ class MonitorRuntime:
         while not self._stop.is_set():
             try:
                 keys = await self.kline_broadcaster.subscription_keys()
-                stale_keys = [key for key in keys if self.websocket.is_stale(*key)]
+                stale_keys = [key for key in keys if self.is_chart_stream_stale(*key)]
                 for symbol, timeframe in stale_keys:
                     # limit=2 的权重最低，且只有存在前端订阅并确认断流时才会请求。
                     await self.repair_market_klines(symbol, timeframe, limit=2)
