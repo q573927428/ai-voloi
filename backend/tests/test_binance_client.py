@@ -120,3 +120,25 @@ async def test_open_interest_parses_notional_value() -> None:
 
     assert points[0].open_interest == Decimal("1000")
     assert points[0].open_interest_value == Decimal("101000")
+
+
+@pytest.mark.asyncio
+async def test_current_open_interest_parses_realtime_snapshot() -> None:
+    """实时 OI 必须保留接口响应时间，供 Signal 审计检测时刻的持仓终点。"""
+    client = BinanceClient.__new__(BinanceClient)
+
+    async def fake_get(path: str, params: dict) -> dict:
+        assert path == "/fapi/v1/openInterest"
+        assert params == {"symbol": "BTCUSDT"}
+        return {
+            "symbol": "BTCUSDT",
+            "openInterest": "1002.5",
+            "time": 1_700_000_123_000,
+        }
+
+    client._get = fake_get
+
+    point = await client.current_open_interest("BTCUSDT")
+
+    assert point.open_interest == Decimal("1002.5")
+    assert point.timestamp == datetime.fromtimestamp(1_700_000_123, timezone.utc)

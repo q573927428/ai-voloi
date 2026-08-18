@@ -131,6 +131,14 @@ class BinanceClient:
             for row in data
         ]
 
+    async def current_open_interest(self, symbol: str) -> OIPoint:
+        """读取交易对检测时刻的实时 OI，用于补齐历史采样点之后的变化。"""
+        data = await self._get("/fapi/v1/openInterest", {"symbol": symbol})
+        return OIPoint(
+            timestamp=datetime.fromtimestamp(data["time"] / 1000, timezone.utc),
+            open_interest=data["openInterest"],
+        )
+
     async def fund_flow_klines(self, symbol: str, timeframe: str, limit: int) -> list[FundFlowKline]:
         """读取资金流所需 K 线字段；主动卖出额由总额减主动买入额得到。"""
         data = await self._get("/fapi/v1/klines", {

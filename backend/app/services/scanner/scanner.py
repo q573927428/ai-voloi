@@ -143,6 +143,8 @@ class Scanner:
             oi_rows: list[OpenInterestSnapshot] = []
             # 相同交易对和回看窗口只查询一次，供同轮扫描中的多个 K 线周期复用。
             oi_ranges: dict[tuple[str, int], tuple[OIPoint, OIPoint] | None] = {}
+            # 实时 OI 与 K 线周期无关，同一交易对在单轮扫描中只需请求一次。
+            current_oi_by_symbol: dict[str, OIPoint] = {}
             for symbol, timeframe, current, progress, ema, ratio, indicators in candidates:
                 signal_key = (symbol, timeframe, current.open_time)
                 # 同一根 K 线只在首次满足组合条件时生成一次 Signal。
@@ -163,7 +165,15 @@ class Scanner:
                     matched = oi_ranges[oi_cache_key]
                     if not matched:
                         continue
-                    oldest, newest = matched
+                    oldest, _ = matched
+                    if symbol not in current_oi_by_symbol:
+                        run.oi_request_count += 1
+                        current_oi_by_symbol[symbol] = await self.client.current_open_interest(symbol)
+                    newest = current_oi_by_symbol[symbol]
+                    # 历史接口只承担回看基准，实时接口保证 OI 终点与 Signal 检测时刻一致。
+                    # 请求排队若跨过当前 K 线收盘边界，不能把下一根 K 线时刻的 OI 配给旧候选。
+                    if oldest.timestamp >= newest.timestamp or newest.timestamp >= current.close_time:
+                        continue
                     change = newest.open_interest - oldest.open_interest
                     change_percent = change / oldest.open_interest * 100
                     oi_rows.extend([

@@ -20,6 +20,7 @@ from app.schemas import (
     DashboardStats,
     KlineData,
     MarketIndicatorsRead,
+    OIPoint,
     RealtimeChartData,
     SignalChartCandle,
     SignalChartData,
@@ -359,8 +360,17 @@ async def contract_fund_flow(
     requested_start_ms = now_ms - period_seconds * (limit + 2) * 1000
     # K 线可继续返回完整窗口，但 OI 起点不能超过 Binance 约一个月的历史保留期。
     oi_start_ms = clamp_oi_history_start_ms(now_ms, requested_start_ms)
+
+    async def load_current_oi() -> OIPoint | None:
+        """实时 OI 是最新未完成 K 线的增强数据，失败时保留历史资金流可用性。"""
+        try:
+            return await runtime.client.current_open_interest(normalized_symbol)
+        except Exception:
+            logger.warning("Failed to load current OI for %s", normalized_symbol, exc_info=True)
+            return None
+
     try:
-        klines, oi_points = await asyncio.gather(
+        klines, oi_points, current_oi = await asyncio.gather(
             runtime.client.fund_flow_klines(normalized_symbol, timeframe, limit),
             runtime.client.open_interest(
                 normalized_symbol,
@@ -368,12 +378,16 @@ async def contract_fund_flow(
                 oi_start_ms,
                 limit=min(limit + 2, 500),
             ),
+            load_current_oi(),
         )
     except Exception as exc:
         logger.exception("Failed to load contract fund flow for %s %s", normalized_symbol, timeframe)
         raise HTTPException(status_code=502, detail="Binance fund flow data is temporarily unavailable") from exc
     if not klines:
         raise HTTPException(status_code=404, detail="Market fund flow data not found")
+    if current_oi is not None:
+        # 实时点只会被未来收盘的当前 K 线选中，不会改写任何已完成 K 线的历史 OI。
+        oi_points.append(current_oi)
     return build_contract_fund_flow(normalized_symbol, timeframe, klines, oi_points)
 
 

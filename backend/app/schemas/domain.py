@@ -203,7 +203,8 @@ class ContractFundFlowData(BaseModel):
 class SignalFundFlowSnapshot(BaseModel):
     """Signal 检测时刻不可变的主动资金流、价格与 OI 联合快照。"""
 
-    version: str = "1.0"
+    # 1.1 起 OI 终点使用实时接口，旧版 1.0 使用历史接口最新完成采样。
+    version: str = "1.1"
     calculated_at: datetime
     quote_volume: Decimal
     taker_buy_quote_volume: Decimal

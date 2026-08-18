@@ -1,6 +1,6 @@
 <!-- ==================== 合约资金流与持仓变化图表 ==================== -->
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import {
   ColorType,
@@ -32,6 +32,10 @@ const error = ref('')
 const data = ref<ContractFundFlowData | null>(null)
 const hoveredPoint = ref<ContractFundFlowPoint | null>(null)
 const tooltipStyle = ref<Record<string, string>>({})
+
+/** 标题状态和摘要只反映最后一根当前 K 线，历史窗口仅用于绘图。 */
+const currentPoint = computed(() => data.value?.points.at(-1) ?? null)
+
 let chart: IChartApi | null = null
 let netFlowSeries: ISeriesApi<'Histogram'> | null = null
 let priceSeries: ISeriesApi<'Line'> | null = null
@@ -283,14 +287,14 @@ onUnmounted(() => {
         <div class="title-line">
           <h2>合约资金流</h2>
           <span>{{ symbol }} · {{ timeframe }} · {{ data?.points.length ?? 0 }} 根</span>
-          <el-tag v-if="data" :type="regimeMeta[data.summary.regime].type" effect="plain" size="small">{{ regimeMeta[data.summary.regime].label }}</el-tag>
+          <el-tag v-if="currentPoint" :type="regimeMeta[currentPoint.regime].type" effect="plain" size="small">{{ regimeMeta[currentPoint.regime].label }}</el-tag>
         </div>
-        <span>主动买卖成交额差与 Open Interest 联合判断</span>
+        <span>当前 K 线 · 主动买卖成交额差与 Open Interest 联合判断</span>
       </div>
-      <div v-if="data" class="fund-flow-summary">
-        <div><span>主动净流</span><strong :class="Number(data.summary.net_taker_flow) >= 0 ? 'positive' : 'negative'">{{ compact(data.summary.net_taker_flow) }} USDT</strong></div>
-        <div><span>OI 变化</span><strong :class="Number(data.summary.open_interest_change_percent) >= 0 ? 'oi-up' : 'negative'">{{ percent(data.summary.open_interest_change_percent) }}</strong></div>
-        <div><span>价格变化</span><strong :class="Number(data.summary.price_change_percent) >= 0 ? 'positive' : 'negative'">{{ percent(data.summary.price_change_percent) }}</strong></div>
+      <div v-if="currentPoint" class="fund-flow-summary">
+        <div><span>主动净流</span><strong :class="Number(currentPoint.net_taker_flow) >= 0 ? 'positive' : 'negative'">{{ compact(currentPoint.net_taker_flow) }} USDT</strong></div>
+        <div><span>OI 变化</span><strong :class="currentPoint.open_interest_change_percent == null ? '' : Number(currentPoint.open_interest_change_percent) >= 0 ? 'oi-up' : 'negative'">{{ percent(currentPoint.open_interest_change_percent) }}</strong></div>
+        <div><span>价格变化</span><strong :class="currentPoint.price_change_percent == null ? '' : Number(currentPoint.price_change_percent) >= 0 ? 'positive' : 'negative'">{{ percent(currentPoint.price_change_percent) }}</strong></div>
       </div>
       <el-tooltip content="刷新资金流">
         <el-button class="refresh-button" circle text :icon="Refresh" aria-label="刷新资金流" :loading="loading" @click="load" />

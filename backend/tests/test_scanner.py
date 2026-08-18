@@ -17,15 +17,24 @@ class FakeBinanceClient:
 
     def __init__(self, start: datetime):
         self.start = start
-        self.calls: list[tuple[str, str, int]] = []
+        self.history_calls: list[tuple[str, str, int]] = []
+        self.current_calls: list[str] = []
 
     async def open_interest(self, symbol: str, period: str, start_ms: int):
         """模拟 5 分钟粒度，返回当前 K 线形成期间的两个 OI 点。"""
-        self.calls.append((symbol, period, start_ms))
+        self.history_calls.append((symbol, period, start_ms))
         return [
             OIPoint(timestamp=self.start, open_interest=Decimal("1000")),
             OIPoint(timestamp=self.start + timedelta(minutes=5), open_interest=Decimal("1001")),
         ]
+
+    async def current_open_interest(self, symbol: str) -> OIPoint:
+        """模拟检测时刻的实时 OI，数值应晚于历史接口最新采样。"""
+        self.current_calls.append(symbol)
+        return OIPoint(
+            timestamp=self.start + timedelta(minutes=10),
+            open_interest=Decimal("1002"),
+        )
 
 
 class FakeSession:
@@ -113,7 +122,8 @@ async def test_oi_is_not_requested_when_volume_does_not_pass() -> None:
 
     run = await scanner.scan({"BTCUSDT"}, {}, ConfigValues(timeframes=["15m"]))
 
-    assert client.calls == []
+    assert client.history_calls == []
+    assert client.current_calls == []
     assert run.candidate_count == 0
     assert run.signal_count == 0
 
@@ -151,7 +161,8 @@ async def test_expired_current_kline_cannot_generate_signal() -> None:
         ConfigValues(timeframes=["15m"]),
     )
 
-    assert client.calls == []
+    assert client.history_calls == []
+    assert client.current_calls == []
     assert run.candidate_count == 0
     assert run.signal_count == 0
 
@@ -195,13 +206,15 @@ async def test_signal_requires_both_volume_and_oi_and_is_published() -> None:
         {"BTCUSDT"}, tickers, ConfigValues(timeframes=["30m"]), funding_rates
     )
 
-    assert len(client.calls) == 1
-    symbol, period, requested_start_ms = client.calls[0]
+    assert len(client.history_calls) == 1
+    symbol, period, requested_start_ms = client.history_calls[0]
     assert (symbol, period) == ("BTCUSDT", "5m")
+    assert client.current_calls == ["BTCUSDT"]
     # 30m K 线默认独立回看 30 分钟，不再复用全局 15 分钟窗口。
     requested_start = datetime.fromtimestamp(requested_start_ms / 1000, timezone.utc)
     assert now - timedelta(minutes=31) < requested_start < now - timedelta(minutes=29)
     assert run.candidate_count == 1
+    assert run.oi_request_count == 2
     assert run.signal_count == 1
     assert published[0].signal_type == "VOLUME_OI_ANOMALY"
     assert published[0].ema14 is not None
@@ -215,7 +228,10 @@ async def test_signal_requires_both_volume_and_oi_and_is_published() -> None:
     assert published[0].fund_flow_snapshot["net_taker_flow"] == "4000"
     assert published[0].fund_flow_snapshot["taker_buy_ratio_percent"] == "60.0"
     assert published[0].fund_flow_snapshot["regime"] == "new_longs"
+    assert published[0].fund_flow_snapshot["version"] == "1.1"
     assert published[0].funding_rate == Decimal("0.0001")
+    assert published[0].newest_oi == Decimal("1002")
+    assert published[0].newest_timestamp == start + timedelta(minutes=10)
 
 
 @pytest.mark.asyncio
@@ -253,4 +269,5 @@ async def test_same_kline_only_generates_one_signal() -> None:
     assert second.candidate_count == 1
     assert second.oi_request_count == 0
     assert second.signal_count == 0
-    assert len(client.calls) == 1
+    assert len(client.history_calls) == 1
+    assert client.current_calls == ["BTCUSDT"]

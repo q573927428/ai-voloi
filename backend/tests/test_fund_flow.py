@@ -96,3 +96,32 @@ def test_summary_uses_only_kline_window_covered_by_open_interest() -> None:
     assert result.summary.net_taker_flow == Decimal("1000")
     assert result.summary.price_change_percent == Decimal("10.0")
     assert result.summary.open_interest_change == Decimal("100")
+
+
+def test_realtime_oi_only_completes_current_unfinished_kline() -> None:
+    """实时 OI 应补齐当前柱变化，同时保持上一根已完成 K 线使用历史边界采样。"""
+    start = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    klines = [
+        FundFlowKline(
+            open_time=start + timedelta(minutes=index * 5),
+            close_time=start + timedelta(minutes=(index + 1) * 5),
+            close=Decimal(100 + index),
+            quote_volume=Decimal("1000"),
+            taker_buy_quote_volume=Decimal("600"),
+        )
+        for index in range(2)
+    ]
+    oi_points = [
+        OIPoint(timestamp=start, open_interest=Decimal("900")),
+        OIPoint(timestamp=start + timedelta(minutes=5), open_interest=Decimal("1000")),
+        # 12:07 是实时接口时间，晚于已完成柱结束时间但早于当前柱结束时间。
+        OIPoint(timestamp=start + timedelta(minutes=7), open_interest=Decimal("1050")),
+    ]
+
+    result = build_contract_fund_flow("BTCUSDT", "5m", klines, oi_points)
+
+    assert result.points[0].open_interest == Decimal("1000")
+    assert result.points[0].open_interest_change is None
+    assert result.points[1].open_interest == Decimal("1050")
+    assert result.points[1].open_interest_change == Decimal("50")
+    assert result.points[1].open_interest_change_percent == Decimal("5.00")

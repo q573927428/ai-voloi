@@ -27,7 +27,7 @@ docker-compose.yml          PostgreSQL、后端、前端编排
 
 新入池交易对通过 `GET /fapi/v1/klines` 初始化每周期 1000 根历史 K 线。完整历史在内存中按市场保存为固定容量的列式 Float64 环形数组，时间使用 int64；交易对退出活跃池或周期被禁用时立即释放对应缓存。常态运行订阅 `<symbol>@kline_<timeframe>` 组合流，不会在每次扫描时重新请求所有 K 线。连接带心跳、断线指数退避和自动重新订阅；检测到收盘时间缺口后，REST 拉取最近窗口补齐。
 
-只有成交量条件通过的 `symbol + timeframe` 才调用 `GET /futures/data/openInterestHist`。统一客户端包含速率限制、并发信号量、超时，以及针对 `429/500/502/503` 和网络异常的有限指数退避。市场池快照每 15 分钟批量刷新一次 ticker 与资金费率。
+只有成交量条件通过的 `symbol + timeframe` 才调用 `GET /futures/data/openInterestHist` 获取回看起点，并调用 `GET /fapi/v1/openInterest` 获取检测时刻的实时 OI；同轮扫描中相同交易对的实时结果由多个周期复用。统一客户端包含速率限制、并发信号量、超时，以及针对 `429/500/502/503` 和网络异常的有限指数退避。市场池快照每 15 分钟批量刷新一次 ticker 与资金费率。
 
 ## Scanner 逻辑
 
