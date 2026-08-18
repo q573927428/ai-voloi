@@ -258,7 +258,7 @@ async def signal_detail(signal_id: UUID, session: AsyncSession = Depends(get_db)
 @router.get("/signals/{signal_id}/chart", response_model=SignalChartData)
 async def signal_chart(
     signal_id: UUID,
-    history_limit: int = Query(1000, ge=50, le=1000),
+    history_limit: int = Query(498, ge=50, le=498),
     session: AsyncSession = Depends(get_db),
 ) -> SignalChartData:
     """返回 Signal 之前的完整 K 线和检测时刻快照，不包含未来价格。"""
@@ -307,7 +307,7 @@ async def realtime_chart(
     symbol: str,
     timeframe: str,
     request: Request,
-    history_limit: int = Query(1000, ge=50, le=1000),
+    history_limit: int = Query(498, ge=50, le=498),
     session: AsyncSession = Depends(get_db),
 ) -> RealtimeChartData:
     """返回指定市场的最新历史窗口和当前未收盘 K 线，作为实时模式初始状态。"""
@@ -433,7 +433,7 @@ async def market_indicators(
         select(Kline)
         .where(*filters)
         .order_by(Kline.open_time.desc())
-        .limit(1000)
+        .limit(498)
     )).scalars().all()
     if not rows:
         raise HTTPException(status_code=404, detail="Market Kline data not found")

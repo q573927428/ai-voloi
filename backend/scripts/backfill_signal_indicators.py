@@ -30,7 +30,7 @@ async def backfill() -> int:
                     Kline.open_time < signal.open_time,
                 )
                 .order_by(Kline.open_time.desc())
-                .limit(1000)
+                .limit(498)
             )).scalars().all()
             klines = [
                 KlineData(

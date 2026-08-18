@@ -123,7 +123,7 @@ class ColumnarKlineRing:
                 self._write(index, kline)
                 self.indicator_state.update(kline)
             else:
-                # 递归类指标按标准持续推进；OBV 仍严格对应当前 1000 根窗口。
+                # 递归类指标按标准持续推进；OBV 仍严格对应当前 498 根窗口。
                 oldest = self._read(self.start)
                 next_oldest = self._read(self._physical_index(1))
                 self.indicator_state.discard_oldest_obv_transition(oldest, next_oldest)
@@ -182,7 +182,7 @@ class ColumnarKlineRing:
 class KlineCache:
     """维护全部活跃市场的紧凑完整历史、当前 K 线与增量指标。"""
 
-    def __init__(self, max_closed: int = 1000):
+    def __init__(self, max_closed: int = 498):
         self._closed: dict[str, dict[str, ColumnarKlineRing]] = defaultdict(dict)
         self._current: dict[str, dict[str, KlineData]] = defaultdict(dict)
         self._max_closed = max_closed

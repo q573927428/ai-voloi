@@ -4,7 +4,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -31,6 +31,28 @@ TIMEFRAME_SECONDS = {
     "4h": 4 * 60 * 60,
     "1d": 24 * 60 * 60,
 }
+
+
+def build_kline_retention_statement(
+    markets: set[tuple[str, str]],
+    history_limit: int,
+):
+    """构造 K 线保留清理语句，仅保留指定市场各自最新的历史窗口。"""
+    ranked = (
+        select(
+            Kline.id.label("id"),
+            func.row_number().over(
+                partition_by=(Kline.symbol, Kline.timeframe),
+                order_by=(Kline.open_time.desc(), Kline.id.desc()),
+            ).label("retention_rank"),
+        )
+        .where(tuple_(Kline.symbol, Kline.timeframe).in_(markets))
+        .cte("ranked_klines")
+    )
+    expired_ids = select(ranked.c.id).where(ranked.c.retention_rank > history_limit)
+    return delete(Kline).where(Kline.id.in_(expired_ids)).execution_options(
+        synchronize_session=False
+    )
 
 
 def update_active_pool_membership(row: Symbol, is_active: bool, observed_at: datetime) -> None:
@@ -321,7 +343,7 @@ class MonitorRuntime:
         """从数据库恢复单个市场周期，并向 Binance 增量补齐或首次全量初始化。"""
         stored = await self._load_stored_klines(symbol, timeframe)
         if not stored:
-            # 数据库没有任何历史时才承担 1000 根 K 线的高权重初始化请求。
+            # 数据库没有任何历史时才请求 498 根 K 线完成初始化。
             klines = await self.client.klines(symbol, timeframe, self.settings.kline_history_limit)
             await self.cache.initialize(symbol, timeframe, klines)
             await self._persist_closed_klines(klines)
@@ -429,7 +451,7 @@ class MonitorRuntime:
             await self.on_kline(item)
 
     async def _persist_closed_klines(self, klines: list[KlineData]) -> None:
-        """按唯一键保存完整 K 线，重复的 WebSocket 收盘事件不会制造脏数据。"""
+        """按唯一键保存完整 K 线，并将每个市场的数据库历史限制在配置窗口内。"""
         complete = [item for item in klines if item.is_closed]
         if not complete:
             return
@@ -448,6 +470,14 @@ class MonitorRuntime:
         )
         async with self.session_factory() as session:
             await session.execute(statement)
+            affected_markets = {(item.symbol, item.timeframe) for item in complete}
+            # 写入与淘汰处于同一事务，避免并发读取观察到超过保留上限的中间状态。
+            await session.execute(
+                build_kline_retention_statement(
+                    affected_markets,
+                    self.settings.kline_history_limit,
+                )
+            )
             await session.commit()
 
     async def _realtime_chart_poll_loop(self) -> None:

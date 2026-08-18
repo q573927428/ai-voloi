@@ -78,18 +78,18 @@ def test_incremental_indicators_match_existing_batch_calculator() -> None:
 
 
 def test_ring_eviction_advances_indicators_and_keeps_window_obv() -> None:
-    """窗口淘汰应常数时间推进递归指标，同时保持 OBV 对应当前 1000 根。"""
-    ring = ColumnarKlineRing("BTCUSDT", "15m", 1000)
-    ring.load([make_kline(index) for index in range(1000)])
-    ring.upsert(make_kline(1000))
+    """窗口淘汰应常数时间推进递归指标，同时保持 OBV 对应当前 498 根。"""
+    ring = ColumnarKlineRing("BTCUSDT", "15m", 498)
+    ring.load([make_kline(index) for index in range(498)])
+    ring.upsert(make_kline(498))
 
     expanded = ring.to_klines()
     batch = calculate_technical_indicators(expanded)
 
-    assert len(expanded) == 1000
+    assert len(expanded) == 498
     incremental = ring.indicators()
     assert incremental is not None and batch is not None
-    assert incremental.candle_count == 1000
+    assert incremental.candle_count == 498
     assert incremental.source_close == batch.source_close
     assert incremental.obv == batch.obv
     # 递归指标持续使用初始化后的标准状态，与固定窗口重播只允许极小收敛差异。
@@ -100,7 +100,7 @@ def test_ring_eviction_advances_indicators_and_keeps_window_obv() -> None:
 @pytest.mark.asyncio
 async def test_scan_snapshot_uses_incremental_state_without_expanding_history() -> None:
     """扫描快照应直接返回指标与成交量 EMA，并保留当前未收盘 K 线。"""
-    cache = KlineCache(1000)
+    cache = KlineCache(498)
     closed = [make_kline(index) for index in range(250)]
     current = make_kline(250, closed=False)
     await cache.initialize("BTCUSDT", "15m", [*closed, current])
@@ -119,7 +119,7 @@ async def test_scan_snapshot_uses_incremental_state_without_expanding_history() 
 @pytest.mark.asyncio
 async def test_retain_removes_inactive_markets_and_rejects_late_events() -> None:
     """活跃池退出后应释放完整与当前缓存，并拒绝旧订阅迟到事件重新建桶。"""
-    cache = KlineCache(1000)
+    cache = KlineCache(498)
     await cache.initialize("BTCUSDT", "15m", [make_kline(0)])
     eth = make_kline(0).model_copy(update={"symbol": "ETHUSDT"})
     await cache.initialize("ETHUSDT", "15m", [eth])
@@ -132,4 +132,4 @@ async def test_retain_removes_inactive_markets_and_rejects_late_events() -> None
     assert accepted is False
     assert await cache.market_keys() == {("BTCUSDT", "15m")}
     assert await cache.symbols() == {"BTCUSDT"}
-    assert await cache.allocated_bytes() == 1000 * 72
+    assert await cache.allocated_bytes() == 498 * 72

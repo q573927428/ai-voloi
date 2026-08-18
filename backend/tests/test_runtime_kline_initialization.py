@@ -6,6 +6,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 import app.services.runtime as runtime_module
 from app.schemas import KlineData
@@ -13,6 +14,7 @@ from app.services.cache.kline_cache import KlineCache
 from app.services.runtime import (
     KLINE_INCREMENTAL_LIMIT,
     MonitorRuntime,
+    build_kline_retention_statement,
     has_fresh_closed_history,
     update_active_pool_membership,
 )
@@ -78,8 +80,8 @@ def make_kline(start: datetime, volume: str, closed: bool = True) -> KlineData:
 def make_runtime(stored: list[KlineData], batches: list[list[KlineData]]):
     """构造只包含初始化链路依赖的轻量运行时。"""
     runtime = object.__new__(MonitorRuntime)
-    runtime.settings = SimpleNamespace(kline_history_limit=1000)
-    runtime.cache = KlineCache(1000)
+    runtime.settings = SimpleNamespace(kline_history_limit=498)
+    runtime.cache = KlineCache(498)
     runtime.client = FakeKlineClient(batches)
     persisted: list[list[KlineData]] = []
 
@@ -118,6 +120,25 @@ def current_timeframe_open(now: datetime, minutes: int) -> datetime:
     seconds = minutes * 60
     timestamp = int(now.timestamp()) // seconds * seconds
     return datetime.fromtimestamp(timestamp, timezone.utc)
+
+
+def test_kline_retention_statement_limits_each_market_independently() -> None:
+    """数据库淘汰必须按交易对和周期分别排名，且仅处理本批写入涉及的市场。"""
+    statement = build_kline_retention_statement(
+        {("BTCUSDT", "15m"), ("ETHUSDT", "1h")},
+        498,
+    )
+    compiled = statement.compile(
+        dialect=postgresql.dialect(),
+        compile_kwargs={"literal_binds": True},
+    )
+    sql = str(compiled)
+
+    assert "PARTITION BY klines.symbol, klines.timeframe" in sql
+    assert "ORDER BY klines.open_time DESC, klines.id DESC" in sql
+    assert "retention_rank > 498" in sql
+    assert "('BTCUSDT', '15m')" in sql
+    assert "('ETHUSDT', '1h')" in sql
 
 
 @pytest.mark.asyncio
@@ -173,7 +194,7 @@ async def test_missing_history_uses_full_initialization_request() -> None:
 
     await runtime._initialize_symbol_timeframe("BTCUSDT", "15m")
 
-    assert runtime.client.calls == [("BTCUSDT", "15m", 1000, None)]
+    assert runtime.client.calls == [("BTCUSDT", "15m", 498, None)]
     cached_current, cached_closed = await runtime.cache.snapshot("BTCUSDT", "15m")
     assert cached_closed == [first]
     assert cached_current == current
@@ -202,7 +223,7 @@ async def test_long_gap_expands_follow_up_request_until_current_kline() -> None:
     follow_up_start = int(first_batch[-1].close_time.timestamp() * 1000)
     assert runtime.client.calls == [
         ("BTCUSDT", "15m", KLINE_INCREMENTAL_LIMIT, first_start),
-        ("BTCUSDT", "15m", 1000, follow_up_start),
+        ("BTCUSDT", "15m", 498, follow_up_start),
     ]
     cached_current, cached_closed = await runtime.cache.snapshot("BTCUSDT", "15m")
     assert cached_closed[-1] == first_batch[-1]
