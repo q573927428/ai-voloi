@@ -33,7 +33,11 @@ from app.services.cache.technical_indicators import (
     calculate_technical_indicators,
 )
 from app.services.chart import build_chart_candles, latest_ema_values
-from app.services.fund_flow import OI_PERIOD_SECONDS, build_contract_fund_flow
+from app.services.fund_flow import (
+    OI_PERIOD_SECONDS,
+    build_contract_fund_flow,
+    clamp_oi_history_start_ms,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -352,11 +356,18 @@ async def contract_fund_flow(
     if period_seconds is None:
         raise HTTPException(status_code=422, detail="Open Interest does not support this timeframe")
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    start_ms = now_ms - period_seconds * (limit + 2) * 1000
+    requested_start_ms = now_ms - period_seconds * (limit + 2) * 1000
+    # K 线可继续返回完整窗口，但 OI 起点不能超过 Binance 约一个月的历史保留期。
+    oi_start_ms = clamp_oi_history_start_ms(now_ms, requested_start_ms)
     try:
         klines, oi_points = await asyncio.gather(
             runtime.client.fund_flow_klines(normalized_symbol, timeframe, limit),
-            runtime.client.open_interest(normalized_symbol, timeframe, start_ms, limit=min(limit + 2, 500)),
+            runtime.client.open_interest(
+                normalized_symbol,
+                timeframe,
+                oi_start_ms,
+                limit=min(limit + 2, 500),
+            ),
         )
     except Exception as exc:
         logger.exception("Failed to load contract fund flow for %s %s", normalized_symbol, timeframe)

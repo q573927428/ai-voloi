@@ -1,7 +1,7 @@
 """合约主动资金流与 Open Interest 联合分析服务。"""
 
 from bisect import bisect_right
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from app.schemas import (
@@ -28,6 +28,14 @@ OI_PERIOD_SECONDS = {
     "12h": 43200,
     "1d": 86400,
 }
+# Binance 仅提供最近约一个月的 OI 历史，预留一天余量避免边界时刻被判定为过期。
+OI_HISTORY_SAFE_WINDOW = timedelta(days=29)
+
+
+def clamp_oi_history_start_ms(now_ms: int, requested_start_ms: int) -> int:
+    """把 OI 查询起点限制在 Binance 可用历史窗口内，同时保留较短周期的原始范围。"""
+    earliest_safe_ms = now_ms - int(OI_HISTORY_SAFE_WINDOW.total_seconds() * 1000)
+    return max(requested_start_ms, earliest_safe_ms)
 
 
 def percent_change(current: Decimal, previous: Decimal | None) -> Decimal | None:
@@ -137,14 +145,18 @@ def build_contract_fund_flow(
             previous_oi = current_oi
             previous_oi_timestamp = oi.timestamp
 
-    first_oi = next((point.open_interest for point in points if point.open_interest is not None), None)
-    last_oi = next((point.open_interest for point in reversed(points) if point.open_interest is not None), None)
+    oi_covered_points = [point for point in points if point.open_interest is not None]
+    first_oi = oi_covered_points[0].open_interest if oi_covered_points else None
+    last_oi = oi_covered_points[-1].open_interest if oi_covered_points else None
     summary_oi_change = last_oi - first_oi if first_oi is not None and last_oi is not None else None
     summary_oi_percent = percent_change(last_oi, first_oi) if last_oi is not None else None
+    # 长周期 K 线可能早于 Binance 的 OI 保留期，汇总必须使用价格、资金流与 OI 的共同窗口。
+    summary_points = oi_covered_points or points
     summary_price_percent = (
-        percent_change(points[-1].close, points[0].close) if len(points) >= 2 else None
+        percent_change(summary_points[-1].close, summary_points[0].close)
+        if len(summary_points) >= 2 else None
     )
-    summary_net_flow = sum((point.net_taker_flow for point in points), ZERO)
+    summary_net_flow = sum((point.net_taker_flow for point in summary_points), ZERO)
     summary = ContractFundFlowSummary(
         net_taker_flow=summary_net_flow,
         price_change_percent=summary_price_percent,

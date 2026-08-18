@@ -4,7 +4,24 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from app.schemas import FundFlowKline, OIPoint
-from app.services.fund_flow import build_contract_fund_flow, classify_regime
+from app.services.fund_flow import (
+    OI_HISTORY_SAFE_WINDOW,
+    build_contract_fund_flow,
+    clamp_oi_history_start_ms,
+    classify_regime,
+)
+
+
+def test_clamp_oi_history_start_respects_binance_retention_window() -> None:
+    """长周期查询不能把 OI 起点推到 Binance 历史保留期之外。"""
+    now_ms = 2_000_000_000_000
+    safe_window_ms = int(OI_HISTORY_SAFE_WINDOW.total_seconds() * 1000)
+    recent_start_ms = now_ms - 7 * 24 * 60 * 60 * 1000
+
+    assert clamp_oi_history_start_ms(now_ms, now_ms - safe_window_ms * 2) == (
+        now_ms - safe_window_ms
+    )
+    assert clamp_oi_history_start_ms(now_ms, recent_start_ms) == recent_start_ms
 
 
 def test_classify_regime_covers_open_and_close_directions() -> None:
@@ -47,3 +64,35 @@ def test_build_contract_fund_flow_aligns_oi_and_calculates_summary() -> None:
     assert result.summary.net_taker_flow == Decimal("1200")
     assert result.summary.open_interest_change == Decimal("200")
     assert result.summary.regime == "new_longs"
+
+
+def test_summary_uses_only_kline_window_covered_by_open_interest() -> None:
+    """超过 OI 保留期的旧 K 线仍可展示，但不能混入联合窗口汇总。"""
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    closes = (Decimal("100"), Decimal("200"), Decimal("300"), Decimal("330"))
+    taker_buys = (Decimal("100"), Decimal("200"), Decimal("700"), Decimal("800"))
+    klines = [
+        FundFlowKline(
+            open_time=start + timedelta(days=index),
+            close_time=start + timedelta(days=index + 1),
+            close=closes[index],
+            quote_volume=Decimal("1000"),
+            taker_buy_quote_volume=taker_buys[index],
+        )
+        for index in range(4)
+    ]
+    oi_points = [
+        OIPoint(
+            timestamp=start + timedelta(days=index + 1),
+            open_interest=Decimal(1000 + index * 100),
+        )
+        for index in (2, 3)
+    ]
+
+    result = build_contract_fund_flow("BTCUSDT", "1d", klines, oi_points)
+
+    assert len(result.points) == 4
+    assert result.points[0].open_interest is None
+    assert result.summary.net_taker_flow == Decimal("1000")
+    assert result.summary.price_change_percent == Decimal("10.0")
+    assert result.summary.open_interest_change == Decimal("100")
