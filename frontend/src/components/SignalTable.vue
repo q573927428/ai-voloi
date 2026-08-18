@@ -72,18 +72,20 @@ function timeframeClass(timeframe: string): string {
   return 'timeframe-level-5'
 }
 
-/** 格式化最大盈亏；尚未计算或异常数据不展示为虚假的 0%。 */
-function performancePercent(value?: string | null): string {
+/** 格式化最大涨跌幅；接口中的正负号直接表达价格变化方向。 */
+function performancePercent(value: string | null | undefined): string {
   if (value == null || value === '') return '待计算'
   const number = Number(value)
   if (!Number.isFinite(number)) return '待计算'
   return `${number > 0 ? '+' : ''}${number.toFixed(3)}%`
 }
 
-/** 最大盈亏字段按实际正负着色，因为当前已计算区间的最小值也可能仍为正。 */
-function performanceClass(value?: string | null): string {
+/** 最大值和最小值按实际符号着色，绝对涨跌幅超过 5% 时加粗。 */
+function performanceClass(value: string | null | undefined): string {
   if (value == null || value === '' || !Number.isFinite(Number(value))) return 'pending'
-  return Number(value) >= 0 ? 'positive' : 'negative'
+  const number = Number(value)
+  const toneClass = number >= 0 ? 'positive' : 'negative'
+  return Math.abs(number) > 5 ? `${toneClass} performance-strong` : toneClass
 }
 
 /** 普通正数保持默认文字色，仅超过 5x 或 5% 时使用深绿色突出显示。 */
@@ -145,8 +147,8 @@ function groupRowClass({ row }: { row: GroupedSignalRow }): string {
     <el-table-column label="量比" min-width="80" align="right"><template #default="{ row }"><span :class="standoutMetricClass(row.volume_ratio)">{{ Number(row.volume_ratio).toFixed(2) }}x</span></template></el-table-column>
     <el-table-column label="OI 变化" min-width="108" align="right"><template #default="{ row }"><div class="oi-change"><span :class="standoutMetricClass(row.oi_change_percent)">+{{ Number(row.oi_change_percent).toFixed(3) }}%</span><small>{{ oiWindow(row.oi_lookback_minutes) }}</small></div></template></el-table-column>
     <el-table-column label="24h 成交额" min-width="116" align="right"><template #default="{ row }">{{ compact(row.quote_volume_24h) }}</template></el-table-column>
-    <el-table-column label="最大涨幅" min-width="100" align="right"><template #default="{ row }"><span :class="performanceClass(row.future_performance?.max_profit_percent)">{{ performancePercent(row.future_performance?.max_profit_percent) }}</span></template></el-table-column>
-    <el-table-column label="最大跌幅" min-width="100" align="right"><template #default="{ row }"><span :class="performanceClass(row.future_performance?.max_loss_percent)">{{ performancePercent(row.future_performance?.max_loss_percent) }}</span></template></el-table-column>
+    <el-table-column label="最大涨幅" min-width="100" align="right"><template #default="{ row }"><span :class="performanceClass(row.future_performance?.max_rise_percent)">{{ performancePercent(row.future_performance?.max_rise_percent) }}</span></template></el-table-column>
+    <el-table-column label="最大跌幅" min-width="100" align="right"><template #default="{ row }"><span :class="performanceClass(row.future_performance?.max_drop_percent)">{{ performancePercent(row.future_performance?.max_drop_percent) }}</span></template></el-table-column>
     <el-table-column label="未来表现" width="180" align="center"><template #default="{ row }"><FuturePerformanceSparkline :performance="row.future_performance" /></template></el-table-column>
     <el-table-column label="" width="58" fixed="right">
       <template #default="{ row }"><el-tooltip content="查看完整快照"><el-button text circle :icon="View" aria-label="查看完整快照" @click="$emit('open', row.id)" /></el-tooltip></template>
@@ -156,6 +158,7 @@ function groupRowClass({ row }: { row: GroupedSignalRow }): string {
 
 <style scoped>
 .pending { color: #8a95a1; font-size: 12px; }
+.performance-strong { font-weight: 900; }
 .signal-metric { font-weight: 650; }
 .standout-metric { display: inline-block; color: #00b77d; font-weight: 950; }
 .signal-progress { width: 100%; }

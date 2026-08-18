@@ -99,20 +99,20 @@ export interface MarketIndicators {
   }
 }
 
-/** Signal 检测后各观察周期的收益，以及已计算区间内的最大盈亏。 */
+/** Signal 检测后各观察周期的价格变化，以及已计算观察点的最大涨跌幅。 */
 export interface SignalFuturePerformance {
-  return_5m: string | null
-  return_15m: string | null
-  return_30m: string | null
-  return_1h: string | null
-  return_4h: string | null
-  return_8h: string | null
-  return_12h: string | null
-  return_16h: string | null
-  return_1d: string | null
-  return_2d: string | null
-  max_profit_percent: string | null
-  max_loss_percent: string | null
+  price_change_5m_percent: string | null
+  price_change_15m_percent: string | null
+  price_change_30m_percent: string | null
+  price_change_1h_percent: string | null
+  price_change_4h_percent: string | null
+  price_change_8h_percent: string | null
+  price_change_12h_percent: string | null
+  price_change_16h_percent: string | null
+  price_change_1d_percent: string | null
+  price_change_2d_percent: string | null
+  max_rise_percent: string | null
+  max_drop_percent: string | null
 }
 
 /** 不可变 Signal 市场快照，字段保留检测时刻的原始数值。 */

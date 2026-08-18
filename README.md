@@ -56,7 +56,7 @@ docker-compose.yml          PostgreSQL、后端、前端编排
 | `klines` | 完整历史 K 线 | `symbol + timeframe + open_time` 唯一 |
 | `open_interest_snapshots` | Signal 候选的 OI 观察点 | 交易对/周期/时间索引 |
 | `signals` | 检测时刻不可变完整快照 | UUID 主键；业务不提供修改 API |
-| `signal_future_performance` | 5m 至 2d 历史时点收益及观察点最大/最小值 | `signal_id` 一对一 |
+| `signal_future_performance` | 5m 至 2d 历史时点价格变化及观察点最大涨跌幅 | `signal_id` 一对一 |
 | `scanner_runs` | 每次扫描审计数据 | 扫描时间索引 |
 | `system_config` | 动态运行参数 | `key` 主键 |
 

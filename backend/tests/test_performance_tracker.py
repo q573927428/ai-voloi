@@ -13,8 +13,14 @@ from app.services.performance.tracker import HORIZONS, PerformanceTracker
 class FakeHistoricalKlineClient:
     """按目标分钟生成不同收盘价，并记录历史 K 线请求参数。"""
 
-    def __init__(self) -> None:
+    def __init__(self, closes: list[Decimal] | None = None) -> None:
         self.calls: list[tuple[str, str, int, int | None]] = []
+        self.observation_calls: list[int] = []
+        self.closes = closes or [
+            Decimal("101"), Decimal("99"), Decimal("103"), Decimal("96"),
+            Decimal("105"), Decimal("94"), Decimal("107"), Decimal("92"),
+            Decimal("109"), Decimal("90"),
+        ]
 
     async def klines(
         self,
@@ -28,8 +34,12 @@ class FakeHistoricalKlineClient:
         self.calls.append((symbol, timeframe, limit, end_ms))
         assert start_ms is None
         assert end_ms is not None
-        open_time = datetime.fromtimestamp((end_ms + 1) / 1000, timezone.utc) - timedelta(minutes=1)
-        close = Decimal(101 + len(self.calls) - 1)
+        self.observation_calls.append(end_ms)
+        open_time = (
+            datetime.fromtimestamp((end_ms + 1) / 1000, timezone.utc)
+            - timedelta(minutes=1)
+        )
+        close = self.closes[len(self.observation_calls) - 1]
         return [
             KlineData(
                 symbol=symbol,
@@ -93,8 +103,8 @@ async def test_delayed_update_uses_each_horizons_historical_minute() -> None:
     )
     performance = SimpleNamespace(
         **{field: None for field in HORIZONS},
-        max_profit_percent=None,
-        max_loss_percent=None,
+        max_rise_percent=None,
+        max_drop_percent=None,
     )
     session = FakeSession([(signal, performance)])
     client = FakeHistoricalKlineClient()
@@ -104,11 +114,12 @@ async def test_delayed_update_uses_each_horizons_historical_minute() -> None:
 
     assert session.committed
     assert [getattr(performance, field) for field in HORIZONS] == [
-        Decimal(index) for index in range(1, 11)
+        Decimal(value) for value in (1, -1, 3, -4, 5, -6, 7, -8, 9, -10)
     ]
-    assert performance.max_profit_percent == Decimal("10")
-    assert performance.max_loss_percent == Decimal("1")
-    assert [call[3] for call in client.calls] == [
+    # 最大涨跌幅来自固定观察点，正负号直接表达价格变化方向。
+    assert performance.max_rise_percent == Decimal("9")
+    assert performance.max_drop_percent == Decimal("-10")
+    assert client.observation_calls == [
         int(
             (
                 (detected_at + timedelta(minutes=minutes)).replace(second=0)
@@ -121,9 +132,46 @@ async def test_delayed_update_uses_each_horizons_historical_minute() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("closes", "expected_maximum", "expected_minimum"),
+    [
+        ([Decimal(value) for value in range(101, 111)], Decimal("10"), Decimal("1")),
+        ([Decimal(value) for value in range(99, 89, -1)], Decimal("-1"), Decimal("-10")),
+    ],
+)
+@pytest.mark.asyncio
+async def test_extremes_are_strict_maximum_and_minimum(
+    closes: list[Decimal],
+    expected_maximum: Decimal,
+    expected_minimum: Decimal,
+) -> None:
+    """全涨或全跌时也只取观察点最大值和最小值，不按方向截断为零。"""
+    detected_at = datetime(2026, 8, 10, 1, 2, 30, tzinfo=timezone.utc)
+    signal = SimpleNamespace(
+        symbol="BTCUSDT",
+        detected_at=detected_at,
+        current_price=Decimal("100"),
+    )
+    performance = SimpleNamespace(
+        **{field: None for field in HORIZONS},
+        max_rise_percent=None,
+        max_drop_percent=None,
+    )
+    session = FakeSession([(signal, performance)])
+    tracker = PerformanceTracker(
+        FakeHistoricalKlineClient(closes),
+        lambda: session,
+    )
+
+    await tracker.update(detected_at + timedelta(days=3))
+
+    assert performance.max_rise_percent == expected_maximum
+    assert performance.max_drop_percent == expected_minimum
+
+
 def test_horizons_include_added_hour_and_two_day_points() -> None:
     """未来表现应包含新增的 8h、12h、16h 和 2d 观察点。"""
-    assert HORIZONS["return_8h"] == 480
-    assert HORIZONS["return_12h"] == 720
-    assert HORIZONS["return_16h"] == 960
-    assert HORIZONS["return_2d"] == 2880
+    assert HORIZONS["price_change_8h_percent"] == 480
+    assert HORIZONS["price_change_12h_percent"] == 720
+    assert HORIZONS["price_change_16h_percent"] == 960
+    assert HORIZONS["price_change_2d_percent"] == 2880

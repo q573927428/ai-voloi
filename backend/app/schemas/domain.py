@@ -271,20 +271,20 @@ class SignalRead(BaseModel):
 
 
 class SignalFuturePerformanceRead(BaseModel):
-    """Signal 各观察周期的未来收益，以及当前已计算区间的最大盈亏。"""
+    """Signal 后各观察周期的价格变化，以及已计算观察点的最大涨跌幅。"""
     model_config = ConfigDict(from_attributes=True)
-    return_5m: Decimal | None
-    return_15m: Decimal | None
-    return_30m: Decimal | None
-    return_1h: Decimal | None
-    return_4h: Decimal | None
-    return_8h: Decimal | None
-    return_12h: Decimal | None
-    return_16h: Decimal | None
-    return_1d: Decimal | None
-    return_2d: Decimal | None
-    max_profit_percent: Decimal | None
-    max_loss_percent: Decimal | None
+    price_change_5m_percent: Decimal | None
+    price_change_15m_percent: Decimal | None
+    price_change_30m_percent: Decimal | None
+    price_change_1h_percent: Decimal | None
+    price_change_4h_percent: Decimal | None
+    price_change_8h_percent: Decimal | None
+    price_change_12h_percent: Decimal | None
+    price_change_16h_percent: Decimal | None
+    price_change_1d_percent: Decimal | None
+    price_change_2d_percent: Decimal | None
+    max_rise_percent: Decimal | None
+    max_drop_percent: Decimal | None
 
 
 class SignalListRead(SignalRead):

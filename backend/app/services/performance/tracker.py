@@ -1,4 +1,4 @@
-"""Signal 未来收益观察点的历史价格回填服务。"""
+"""Signal 后固定观察点价格变化与最大涨跌幅回填服务。"""
 
 import logging
 from datetime import datetime, timedelta, timezone
@@ -12,21 +12,26 @@ from app.services.binance.client import BinanceClient
 
 logger = logging.getLogger(__name__)
 HORIZONS = {
-    "return_5m": 5,
-    "return_15m": 15,
-    "return_30m": 30,
-    "return_1h": 60,
-    "return_4h": 240,
-    "return_8h": 480,
-    "return_12h": 720,
-    "return_16h": 960,
-    "return_1d": 1440,
-    "return_2d": 2880,
+    "price_change_5m_percent": 5,
+    "price_change_15m_percent": 15,
+    "price_change_30m_percent": 30,
+    "price_change_1h_percent": 60,
+    "price_change_4h_percent": 240,
+    "price_change_8h_percent": 480,
+    "price_change_12h_percent": 720,
+    "price_change_16h_percent": 960,
+    "price_change_1d_percent": 1440,
+    "price_change_2d_percent": 2880,
 }
 
 
 class PerformanceTracker:
-    """使用目标时刻的历史 1m K 线回填收益，并维护观察点最大值和最小值。"""
+    """
+    回填 Signal 后固定观察点的价格变化。
+
+    最大涨幅和最大跌幅只聚合已经计算的固定观察点，不额外拉取观察点之间的
+    1m K 线。所有结果均相对 Signal 价格计算，不表达持仓盈利或亏损。
+    """
 
     def __init__(
         self,
@@ -36,13 +41,13 @@ class PerformanceTracker:
         self.client = client
         self.session_factory = session_factory
 
-    async def _return_at(
+    async def _price_change_at(
         self,
         signal: Signal,
         target_time: datetime,
         now: datetime,
     ) -> Decimal | None:
-        """读取目标分钟可用的最近完整 1m K 线，并计算相对 Signal 价格的收益率。"""
+        """读取目标分钟可用的最近完整 1m K 线，计算相对 Signal 价格的涨跌幅。"""
         minute_start = target_time.replace(second=0, microsecond=0)
         klines = await self.client.klines(
             signal.symbol,
@@ -64,7 +69,7 @@ class PerformanceTracker:
         return (kline.close - signal.current_price) / signal.current_price * 100
 
     async def update(self, now: datetime | None = None) -> None:
-        """补齐所有已经到期但尚未写入的观察点，不受服务停机时长限制。"""
+        """补齐所有已到期价格观察点，并维护观察点中的最大涨幅和最大跌幅。"""
         now = now or datetime.now(timezone.utc)
         due_conditions = [
             and_(
@@ -88,7 +93,7 @@ class PerformanceTracker:
                     if target_time > now or getattr(performance, field) is not None:
                         continue
                     try:
-                        result = await self._return_at(signal, target_time, now)
+                        result = await self._price_change_at(signal, target_time, now)
                     except Exception:
                         # 单个市场的历史数据失败不能阻止其他 Signal 和周期继续回填。
                         logger.exception(
@@ -100,13 +105,15 @@ class PerformanceTracker:
                     if result is not None:
                         setattr(performance, field, result)
                         changed = True
+
                 available = [
                     getattr(performance, field)
                     for field in HORIZONS
                     if getattr(performance, field) is not None
                 ]
                 if available:
-                    performance.max_profit_percent = max(available)
-                    performance.max_loss_percent = min(available)
+                    # 严格保留观察点最大值和最小值；全涨或全跌时两者可同号。
+                    performance.max_rise_percent = max(available)
+                    performance.max_drop_percent = min(available)
             if changed:
                 await session.commit()

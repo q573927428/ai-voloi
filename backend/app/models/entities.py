@@ -106,21 +106,21 @@ class Signal(Base, TimestampMixin):
 
 
 class SignalFuturePerformance(Base, TimestampMixin):
-    """Signal 在各观察周期的未来收益与区间盈亏。"""
+    """Signal 后各观察周期的价格变化及观察点最大涨跌幅。"""
     __tablename__ = "signal_future_performance"
     signal_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("signals.id", ondelete="CASCADE"), primary_key=True)
-    return_5m: Mapped[Decimal | None] = mapped_column(NUM)
-    return_15m: Mapped[Decimal | None] = mapped_column(NUM)
-    return_30m: Mapped[Decimal | None] = mapped_column(NUM)
-    return_1h: Mapped[Decimal | None] = mapped_column(NUM)
-    return_4h: Mapped[Decimal | None] = mapped_column(NUM)
-    return_8h: Mapped[Decimal | None] = mapped_column(NUM)
-    return_12h: Mapped[Decimal | None] = mapped_column(NUM)
-    return_16h: Mapped[Decimal | None] = mapped_column(NUM)
-    return_1d: Mapped[Decimal | None] = mapped_column(NUM)
-    return_2d: Mapped[Decimal | None] = mapped_column(NUM)
-    max_profit_percent: Mapped[Decimal | None] = mapped_column(NUM)
-    max_loss_percent: Mapped[Decimal | None] = mapped_column(NUM)
+    price_change_5m_percent: Mapped[Decimal | None] = mapped_column(NUM)
+    price_change_15m_percent: Mapped[Decimal | None] = mapped_column(NUM)
+    price_change_30m_percent: Mapped[Decimal | None] = mapped_column(NUM)
+    price_change_1h_percent: Mapped[Decimal | None] = mapped_column(NUM)
+    price_change_4h_percent: Mapped[Decimal | None] = mapped_column(NUM)
+    price_change_8h_percent: Mapped[Decimal | None] = mapped_column(NUM)
+    price_change_12h_percent: Mapped[Decimal | None] = mapped_column(NUM)
+    price_change_16h_percent: Mapped[Decimal | None] = mapped_column(NUM)
+    price_change_1d_percent: Mapped[Decimal | None] = mapped_column(NUM)
+    price_change_2d_percent: Mapped[Decimal | None] = mapped_column(NUM)
+    max_rise_percent: Mapped[Decimal | None] = mapped_column(NUM)
+    max_drop_percent: Mapped[Decimal | None] = mapped_column(NUM)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
     signal: Mapped[Signal] = relationship(back_populates="future_performance")
 

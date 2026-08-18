@@ -20,16 +20,16 @@ interface ChartPoint extends HorizonPoint {
 }
 
 const horizons: HorizonPoint[] = [
-  { key: 'return_5m', label: '5m' },
-  { key: 'return_15m', label: '15m' },
-  { key: 'return_30m', label: '30m' },
-  { key: 'return_1h', label: '1h' },
-  { key: 'return_4h', label: '4h' },
-  { key: 'return_8h', label: '8h' },
-  { key: 'return_12h', label: '12h' },
-  { key: 'return_16h', label: '16h' },
-  { key: 'return_1d', label: '1d' },
-  { key: 'return_2d', label: '2d' },
+  { key: 'price_change_5m_percent', label: '5m' },
+  { key: 'price_change_15m_percent', label: '15m' },
+  { key: 'price_change_30m_percent', label: '30m' },
+  { key: 'price_change_1h_percent', label: '1h' },
+  { key: 'price_change_4h_percent', label: '4h' },
+  { key: 'price_change_8h_percent', label: '8h' },
+  { key: 'price_change_12h_percent', label: '12h' },
+  { key: 'price_change_16h_percent', label: '16h' },
+  { key: 'price_change_1d_percent', label: '1d' },
+  { key: 'price_change_2d_percent', label: '2d' },
 ]
 
 const width = 156
@@ -44,7 +44,7 @@ function numericValue(key: keyof SignalFuturePerformance): number | null {
   return Number.isFinite(value) ? value : null
 }
 
-/** 格式化收益率，正数显式带加号以便快速辨认方向。 */
+/** 格式化价格涨跌幅，正数显式带加号以便快速辨认方向。 */
 function percent(value: number | null): string {
   if (value == null) return '待计算'
   return `${value > 0 ? '+' : ''}${value.toFixed(3)}%`
@@ -107,7 +107,7 @@ const segments = computed(() => {
     <div class="sparkline" aria-label="未来表现曲线，悬浮查看各周期数值">
       <svg :viewBox="`0 0 ${width} ${height}`" role="img" aria-hidden="true">
         <line :x1="padding" :x2="width - padding" :y1="zeroY" :y2="zeroY" class="zero-line" />
-        <polyline v-for="(points, index) in segments" :key="index" :points="points" class="return-line" />
+        <polyline v-for="(points, index) in segments" :key="index" :points="points" class="change-line" />
         <circle
           v-for="point in chartPoints.filter(item => item.y != null)"
           :key="point.key"
@@ -128,7 +128,7 @@ const segments = computed(() => {
 .sparkline svg { display: block; width: 156px; height: 42px; overflow: visible; }
 .sparkline-pending { color: #8a95a1; font-size: 12px; }
 .zero-line { stroke: #8f8f8f; stroke-width: 1; stroke-dasharray: 2 2; }
-.return-line { fill: none; stroke: #536579; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.change-line { fill: none; stroke: #536579; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .point-up { fill: #14805e; }
 .point-down { fill: #c54d4a; }
 .performance-tooltip { display: grid; grid-template-columns: repeat(2, minmax(90px, 1fr)); gap: 5px 16px; min-width: 210px; }

@@ -7,7 +7,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, errorMessage } from '../api/client'
 import MarketSymbol from '../components/MarketSymbol.vue'
 import SignalTradingViewChart from '../components/SignalTradingViewChart.vue'
-import type { SignalSnapshot } from '../types'
+import type { SignalFuturePerformance, SignalSnapshot } from '../types'
 
 const route = useRoute()
 const router = useRouter()
@@ -30,6 +30,35 @@ const alignmentType = computed(() => ({
   insufficient_data: 'info',
 }[signal.value?.technical_indicators?.trend.ema_alignment ?? 'insufficient_data'] as 'success' | 'danger' | 'warning' | 'info'))
 const tone = (value?: string | null) => value == null ? '' : Number(value) >= 0 ? 'positive' : 'negative'
+
+/** 未来价格变化指标采用显式标签和顺序，避免向页面暴露 API 字段名。 */
+interface FuturePerformanceMetric {
+  key: keyof SignalFuturePerformance
+  label: string
+}
+
+const futurePerformanceMetrics: FuturePerformanceMetric[] = [
+  { key: 'price_change_5m_percent', label: '5m 涨跌幅' },
+  { key: 'price_change_15m_percent', label: '15m 涨跌幅' },
+  { key: 'price_change_30m_percent', label: '30m 涨跌幅' },
+  { key: 'price_change_1h_percent', label: '1h 涨跌幅' },
+  { key: 'price_change_4h_percent', label: '4h 涨跌幅' },
+  { key: 'price_change_8h_percent', label: '8h 涨跌幅' },
+  { key: 'price_change_12h_percent', label: '12h 涨跌幅' },
+  { key: 'price_change_16h_percent', label: '16h 涨跌幅' },
+  { key: 'price_change_1d_percent', label: '1d 涨跌幅' },
+  { key: 'price_change_2d_percent', label: '2d 涨跌幅' },
+  { key: 'max_rise_percent', label: '最大涨幅' },
+  { key: 'max_drop_percent', label: '最大跌幅' },
+]
+
+/** 格式化观察点涨跌幅，正负号直接表达价格变化方向。 */
+function futurePerformanceText(value: string | null): string {
+  if (value == null) return '待计算'
+  const number = Number(value)
+  if (!Number.isFinite(number)) return '待计算'
+  return `${number > 0 ? '+' : ''}${n(String(number))}%`
+}
 
 /** 获取单个 Signal 的完整不可变快照及未来表现。 */
 async function load() {
@@ -120,7 +149,7 @@ onMounted(load)
         <div class="indicator-meta">旧 Signal 尚未回填结构化指标快照</div>
       </template>
     </section>
-    <section class="detail-section" style="grid-column:1/-1"><h2>未来表现</h2><div v-if="signal.future_performance" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:18px"><div v-for="(value,key) in signal.future_performance" :key="key"><div class="metric-label">{{ key }}</div><strong :class="Number(value) >= 0 ? 'positive' : 'negative'">{{ value == null ? '待计算' : `${n(value)}%` }}</strong></div></div><el-empty v-else description="等待未来价格数据" :image-size="70" /></section>
+    <section class="detail-section" style="grid-column:1/-1"><h2>未来价格表现</h2><div v-if="signal.future_performance" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:18px"><div v-for="metric in futurePerformanceMetrics" :key="metric.key"><div class="metric-label">{{ metric.label }}</div><strong :class="tone(signal.future_performance[metric.key])">{{ futurePerformanceText(signal.future_performance[metric.key]) }}</strong></div></div><el-empty v-else description="等待未来价格数据" :image-size="70" /></section>
   </div>
   <el-skeleton v-else :rows="12" animated />
 </template>

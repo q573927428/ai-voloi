@@ -377,7 +377,7 @@ class MonitorRuntime:
                 logger.exception("Scheduled scan failed")
 
     async def _performance_loop(self) -> None:
-        """每分钟回填已到期的未来收益观察点。"""
+        """每分钟回填已到期的未来价格变化观察点。"""
         while not self._stop.is_set():
             try:
                 await self.performance.update()

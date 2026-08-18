@@ -234,9 +234,12 @@ async def signal_detail(signal_id: UUID, session: AsyncSession = Depends(get_db)
     snapshot["future_performance"] = {
         key: str(getattr(performance, key)) if getattr(performance, key) is not None else None
         for key in (
-            "return_5m", "return_15m", "return_30m", "return_1h", "return_4h",
-            "return_8h", "return_12h", "return_16h", "return_1d", "return_2d",
-            "max_profit_percent", "max_loss_percent",
+            "price_change_5m_percent", "price_change_15m_percent",
+            "price_change_30m_percent", "price_change_1h_percent",
+            "price_change_4h_percent", "price_change_8h_percent",
+            "price_change_12h_percent", "price_change_16h_percent",
+            "price_change_1d_percent", "price_change_2d_percent",
+            "max_rise_percent", "max_drop_percent",
         )
     } if performance else None
     return snapshot

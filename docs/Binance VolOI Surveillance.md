@@ -775,29 +775,34 @@ futurePerformance = NULL
 1d
 ```
 
-的未来收益率。
+相对 Signal 价格的未来涨跌幅。
 
 至少保存：
 
 ```text
-return5m
-return15m
-return30m
-return1h
-return4h
-return8h
-return12h
-return16h
-return1d
-return2d
+priceChange5mPercent
+priceChange15mPercent
+priceChange30mPercent
+priceChange1hPercent
+priceChange4hPercent
+priceChange8hPercent
+priceChange12hPercent
+priceChange16hPercent
+priceChange1dPercent
+priceChange2dPercent
 ```
 
 以及：
 
 ```text
-maxProfitPercent
-maxLossPercent
+maxRisePercent
+maxDropPercent
 ```
+
+最大涨幅和最大跌幅分别取上述已计算观察点中的最大正向变化和最大负向
+变化，即严格取所有观察点涨跌幅的最大值和最小值。全涨时两者均为正数，
+全跌时两者均为负数。不额外拉取观察点之间的 1m K 线，也不代表未定义交易
+方向时的盈利或亏损。
 
 用于以后分析Signal质量。
 
