@@ -1,6 +1,6 @@
-<!-- ==================== TradingView Signal K 线图表 ==================== -->
+<!-- ==================== TradingView K 线图表 ==================== -->
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   CandlestickSeries,
   ColorType,
@@ -19,9 +19,10 @@ import type { RealtimeKlineMessage, SignalChartCandle, SignalChartData } from '.
 import { resolvePricePrecision } from '../utils/price'
 import CoinIcon from './CoinIcon.vue'
 
-/** Signal 图表定位、标题及 TradFi 分类标识。 */
+/** K 线图表定位、标题及可选 Signal 快照信息。 */
 interface SignalTradingViewChartProps {
-  signalId: string
+  /** Signal 详情传入 ID 后可在检测快照与实时行情之间切换。 */
+  signalId?: string
   symbol: string
   timeframe: string
   isTradfi?: boolean
@@ -44,8 +45,8 @@ const mode = ref<'snapshot' | 'realtime'>('realtime')
 const liveConnected = ref(false)
 const selectedTimeframe = ref(props.timeframe)
 const timeframeOptions = ref<string[]>([props.timeframe])
-const DEFAULT_VISIBLE_CANDLES = 300
-const RIGHT_EMPTY_CANDLES = 20
+const DEFAULT_VISIBLE_CANDLES = 200
+const RIGHT_EMPTY_CANDLES = 30
 let chart: IChartApi | null = null
 let candleSeries: ISeriesApi<'Candlestick'> | null = null
 let primaryEmaSeries: ISeriesApi<'Line'> | null = null
@@ -66,6 +67,7 @@ const modeOptions = [
   { label: '检测快照', value: 'snapshot' },
   { label: '实时行情', value: 'realtime' },
 ]
+const hasSnapshot = computed(() => Boolean(props.signalId))
 
 /** 将 Lightweight Charts 时间值转换为 Unix 毫秒。 */
 function timeToMilliseconds(time: Time): number {
@@ -332,12 +334,13 @@ async function loadTimeframeOptions() {
   }
 }
 
-/** 获取无未来数据快照并创建 TradingView Lightweight Charts 图表。 */
+/** 创建 TradingView Lightweight Charts 图表，并按需加载 Signal 快照。 */
 async function renderChart() {
   loading.value = true
   error.value = ''
   try {
-    const data = await api.signalChart(props.signalId)
+    // 市场池入口没有 Signal 上下文，只创建实时图表；详情页仍先保留不可变快照。
+    const data = props.signalId ? await api.signalChart(props.signalId) : null
     snapshotData = data
     await nextTick()
     if (!container.value) return
@@ -364,7 +367,7 @@ async function renderChart() {
     secondaryEmaSeries = chart.addSeries(LineSeries, { color: '#d97706', lineWidth: 3, priceLineVisible: false, lastValueVisible: true, title: 'EMA50' })
     volumeSeries = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceScaleId: '', priceLineVisible: false, lastValueVisible: false })
     volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
-    const signalCandle = data.candles.find((item) => item.is_signal)
+    const signalCandle = data?.candles.find((item) => item.is_signal)
     if (signalCandle) {
       // 只在 Y 轴标出不可变的 Signal 快照价，不绘制横线以免遮挡 K 线。
       candleSeries.createPriceLine({
@@ -378,7 +381,7 @@ async function renderChart() {
       })
     }
     signalMarkers = createSeriesMarkers(candleSeries, [])
-    setChartCandles(data.candles)
+    if (data) setChartCandles(data.candles)
     // 移动端断点会同时改变容器宽高，图表必须同步两者，避免内部 Canvas 保留桌面高度。
     resizeObserver = new ResizeObserver(([entry]) => chart?.applyOptions({
       width: entry.contentRect.width,
@@ -400,7 +403,7 @@ onMounted(() => {
 watch(mode, (value) => {
   if (!chart) return
   if (value === 'realtime') void loadRealtime()
-  else {
+  else if (hasSnapshot.value) {
     realtimeRequestId += 1
     closeRealtime()
     error.value = ''
@@ -469,7 +472,7 @@ onUnmounted(() => {
         <div class="mode-control">
           <el-segmented v-model="selectedTimeframe" :options="timeframeOptions" size="small" aria-label="K 线周期" />
           <span v-if="mode === 'realtime'" :class="['live-state', { connected: liveConnected }]">{{ liveConnected ? '已连接' : '连接中' }}</span>
-          <el-segmented v-model="mode" :options="modeOptions" size="small" />
+          <el-segmented v-if="hasSnapshot" v-model="mode" :options="modeOptions" size="small" />
         </div>
       </div>
     </div>
