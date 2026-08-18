@@ -1,18 +1,22 @@
 <!-- ==================== Signal 完整快照页面 ==================== -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { ArrowLeft } from '@element-plus/icons-vue'
+import { computed, ref, watch } from 'vue'
+import { ArrowLeft, Tickets } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { api, errorMessage } from '../api/client'
 import MarketSymbol from '../components/MarketSymbol.vue'
 import SignalTradingViewChart from '../components/SignalTradingViewChart.vue'
-import type { SignalFuturePerformance, SignalSnapshot } from '../types'
+import type { RelatedSignal, SignalFuturePerformance, SignalSnapshot } from '../types'
 
 const route = useRoute()
 const router = useRouter()
 const signal = ref<SignalSnapshot | null>(null)
+const relatedSignals = ref<RelatedSignal[]>([])
+const relatedTotal = ref(0)
 const loading = ref(false)
+const snapshotDrawerOpen = ref(false)
+let loadRequestId = 0
 const n = (value?: string | null) => value == null ? '—' : Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 6 })
 const dt = (value?: string) => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—'
 
@@ -89,28 +93,86 @@ function futurePerformanceText(value: string | null): string {
   return `${number > 0 ? '+' : ''}${n(String(number))}%`
 }
 
-/** 获取单个 Signal 的完整不可变快照及未来表现。 */
-async function load() {
+/** 获取单个 Signal 的完整快照，并同步加载同交易对的切换列表。 */
+async function load(id: string) {
+  const requestId = ++loadRequestId
   loading.value = true
-  try { signal.value = await api.signal(route.params.id as string) }
-  catch (error) { ElMessage.error(errorMessage(error)) }
-  finally { loading.value = false }
+  try {
+    const [detail, related] = await Promise.all([api.signal(id), api.relatedSignals(id)])
+    // 快速连续切换时，只允许最后一次路由请求更新页面。
+    if (requestId !== loadRequestId || route.params.id !== id) return
+    signal.value = detail
+    relatedSignals.value = related.items
+    relatedTotal.value = related.total
+  }
+  catch (error) {
+    if (requestId === loadRequestId) ElMessage.error(errorMessage(error))
+  }
+  finally {
+    if (requestId === loadRequestId) loading.value = false
+  }
 }
-onMounted(load)
+
+/** 路由组件会被复用，参数变化时必须主动刷新详情。 */
+watch(() => route.params.id as string, (id) => void load(id), { immediate: true })
+
+/** 切换快照时保留浏览器历史，方便使用返回键逐步回看。 */
+function openSnapshot(id: string) {
+  if (id !== signal.value?.id) void router.push(`/signals/${id}`)
+}
+
+/** 从抽屉选择快照后立即收起列表，把视线交还给详情和图表。 */
+function selectSnapshot(row: RelatedSignal) {
+  snapshotDrawerOpen.value = false
+  openSnapshot(row.id)
+}
+
+/** 当前快照使用固定底色，方便用户确认所在位置。 */
+function snapshotRowClass({ row }: { row: RelatedSignal }): string {
+  return row.id === signal.value?.id ? 'current-snapshot' : ''
+}
 </script>
 
 <template>
   <div class="section-head">
     <el-button text :icon="ArrowLeft" @click="router.back()">返回</el-button>
-    <el-tag v-if="signal" type="warning" effect="plain">{{ signal.signal_type }}</el-tag>
+    <div v-if="signal" class="detail-actions">
+      <el-tag type="warning" effect="plain">{{ signal.signal_type }}</el-tag>
+      <el-button v-if="relatedSignals.length > 1" :icon="Tickets" @click="snapshotDrawerOpen = true">快照 {{ relatedTotal }}</el-button>
+    </div>
   </div>
+  <el-drawer v-if="signal" v-model="snapshotDrawerOpen" class="snapshot-drawer" size="520px">
+    <template #header>
+      <div class="snapshot-drawer-title">
+        <MarketSymbol :symbol="signal.symbol" :is-tradfi="signal.is_tradfi" />
+        <span>{{ relatedTotal }} 个 Signal 快照</span>
+      </div>
+    </template>
+    <el-table
+      :data="relatedSignals"
+      :row-class-name="snapshotRowClass"
+      row-key="id"
+      height="100%"
+      size="small"
+      empty-text="暂无其他快照"
+      @row-click="selectSnapshot"
+    >
+      <el-table-column label="检测时间" min-width="146"><template #default="{ row }"><div class="snapshot-time"><span>{{ dt(row.detected_at) }}</span><small v-if="row.id === signal?.id">当前</small></div></template></el-table-column>
+      <el-table-column label="周期" width="56" align="center"><template #default="{ row }"><el-tag size="small" effect="plain">{{ row.timeframe }}</el-tag></template></el-table-column>
+      <el-table-column label="量比" width="64" align="right"><template #default="{ row }">{{ Number(row.volume_ratio).toFixed(2) }}x</template></el-table-column>
+      <el-table-column label="OI" width="82" align="right"><template #default="{ row }">+{{ Number(row.oi_change_percent).toFixed(3) }}%</template></el-table-column>
+    </el-table>
+  </el-drawer>
   <SignalTradingViewChart
     v-if="signal"
+    :key="signal.id"
     :signal-id="signal.id"
+    :signals="relatedSignals"
     :symbol="signal.symbol"
     :timeframe="signal.timeframe"
     :is-tradfi="signal.is_tradfi"
     :is-active="signal.is_currently_active"
+    @select-signal="openSnapshot"
   />
   <div v-if="signal" class="detail-grid" v-loading="loading">
     <section class="detail-section"><h2>K 线快照 · <MarketSymbol :symbol="signal.symbol" :is-tradfi="signal.is_tradfi" /> / {{ signal.timeframe }}</h2><div class="kv"><span>检测时间</span><strong>{{ dt(signal.detected_at) }}</strong></div><div class="kv"><span>K 线区间</span><strong>{{ dt(signal.open_time) }}<br>{{ dt(signal.close_time) }}</strong></div><div class="kv"><span>OHLC</span><strong>{{ n(signal.open) }} / {{ n(signal.high) }} / {{ n(signal.low) }} / {{ n(signal.current_price) }}</strong></div><div class="kv"><span>形成进度</span><strong>{{ Number(signal.progress_percent).toFixed(2) }}%</strong></div><div class="kv"><span>Quote Volume</span><strong>{{ n(signal.current_quote_volume) }}</strong></div></section>
@@ -197,6 +259,15 @@ onMounted(load)
 </template>
 
 <style scoped>
+.detail-actions { display: flex; align-items: center; gap: 8px; }
+.snapshot-drawer-title { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 650; }
+.snapshot-drawer-title > span { color: #72808e; font-size: 12px; font-weight: 400; }
+.snapshot-drawer :deep(.el-drawer__body) { min-height: 0; padding: 0; }
+.snapshot-drawer :deep(.el-table__row) { cursor: pointer; }
+.snapshot-drawer :deep(.el-table__row:hover > td.el-table__cell) { background: #f5f8fa; }
+.snapshot-drawer :deep(.el-table__row.current-snapshot > td.el-table__cell) { background: #fff8e8; color: #8d5c08; font-weight: 650; }
+.snapshot-time { display: flex; align-items: center; justify-content: space-between; gap: 5px; white-space: nowrap; }
+.snapshot-time small { color: #8d5c08; font-size: 10px; }
 .indicator-section { grid-column: 1 / -1; }
 .indicator-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .indicator-head h2 { margin-bottom: 0; }
@@ -213,6 +284,7 @@ onMounted(load)
   .indicator-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 22px; }
 }
 @media (max-width: 720px) {
+  :global(.snapshot-drawer) { width: 100% !important; }
   .ema-table { overflow-x: auto; }
   .ema-row { min-width: 560px; }
   .indicator-head { align-items: flex-start; }

@@ -165,6 +165,22 @@ export interface SignalSnapshot {
   future_performance?: SignalFuturePerformance | null
 }
 
+/** Signal 详情页中用于快速切换同交易对快照的轻量摘要。 */
+export interface RelatedSignal {
+  id: string
+  timeframe: string
+  detected_at: string
+  current_price: string
+  volume_ratio: string
+  oi_change_percent: string
+}
+
+/** 同交易对快照列表及未截断的总数。 */
+export interface RelatedSignalPage {
+  items: RelatedSignal[]
+  total: number
+}
+
 /** Signal 检测时刻固化的主动资金流与 OI 联合状态。 */
 export interface SignalFundFlowSnapshot {
   version: string

@@ -371,6 +371,23 @@ class SignalPage(BaseModel):
     page_size: int
 
 
+class RelatedSignalRead(BaseModel):
+    """详情页切换器使用的同交易对 Signal 轻量摘要。"""
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    timeframe: str
+    detected_at: datetime
+    current_price: Decimal
+    volume_ratio: Decimal
+    oi_change_percent: Decimal
+
+
+class RelatedSignalPage(BaseModel):
+    """同交易对 Signal 摘要列表，total 表示该交易对的全部快照数。"""
+    items: list[RelatedSignalRead]
+    total: int
+
+
 class SignalChartCandle(BaseModel):
     """TradingView 图表使用的单根 K 线及可选周期 EMA 值。"""
     time: int

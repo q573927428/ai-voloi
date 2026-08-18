@@ -22,6 +22,8 @@ from app.schemas import (
     MarketIndicatorsRead,
     OIPoint,
     RealtimeChartData,
+    RelatedSignalPage,
+    RelatedSignalRead,
     SignalChartCandle,
     SignalChartData,
     SignalListRead,
@@ -253,6 +255,35 @@ async def signal_detail(signal_id: UUID, session: AsyncSession = Depends(get_db)
         )
     } if performance else None
     return snapshot
+
+
+@router.get("/signals/{signal_id}/related", response_model=RelatedSignalPage)
+async def related_signals(
+    signal_id: UUID,
+    limit: int = Query(200, ge=2, le=500),
+    session: AsyncSession = Depends(get_db),
+) -> RelatedSignalPage:
+    """返回当前 Signal 所属交易对的最近快照摘要，供详情页直接切换。"""
+    current = await session.get(Signal, signal_id)
+    if not current:
+        raise HTTPException(status_code=404, detail="Signal not found")
+
+    total = await session.scalar(
+        select(func.count()).select_from(Signal).where(Signal.symbol == current.symbol)
+    ) or 0
+    rows = (await session.execute(
+        select(Signal)
+        .where(Signal.symbol == current.symbol)
+        .order_by(Signal.detected_at.desc(), Signal.timeframe.asc())
+        .limit(limit)
+    )).scalars().all()
+    # 查看较早历史记录时，当前项可能不在最近 limit 条中，仍需保留它才能表达选中状态。
+    if all(row.id != current.id for row in rows):
+        rows.append(current)
+    return RelatedSignalPage(
+        items=[RelatedSignalRead.model_validate(row) for row in rows],
+        total=total,
+    )
 
 
 @router.get("/signals/{signal_id}/chart", response_model=SignalChartData)
