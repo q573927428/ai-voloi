@@ -41,6 +41,7 @@ const secondaryEmaPeriod = ref<EmaPeriod>(50)
 const primaryEmaValue = ref('—')
 const secondaryEmaValue = ref('—')
 const latestCandle = ref<SignalChartCandle | null>(null)
+const hoveredCandle = ref<SignalChartCandle | null>(null)
 const candleCount = ref(0)
 const latestPriceDirection = ref<'up' | 'down' | 'flat'>('flat')
 const mode = ref<'snapshot' | 'realtime'>('realtime')
@@ -88,6 +89,9 @@ const modeOptions = [
   { label: '实时行情', value: 'realtime' },
 ]
 const hasSnapshot = computed(() => Boolean(props.signalId))
+
+/** 头部行情优先展示光标命中的历史 K 线，光标离开后恢复最新 K 线。 */
+const displayedCandle = computed(() => hoveredCandle.value ?? latestCandle.value)
 
 /** 将 Lightweight Charts 时间值转换为 Unix 毫秒。 */
 function timeToMilliseconds(time: Time): number {
@@ -186,7 +190,7 @@ function refreshEmaSeries() {
   secondaryEmaSeries?.applyOptions({ title: `EMA${secondaryEmaPeriod.value}` })
   primaryEmaSeries?.setData(toSeriesData(primaryEmaPeriod.value))
   secondaryEmaSeries?.setData(toSeriesData(secondaryEmaPeriod.value))
-  updateLegend(visibleCandles[visibleCandles.length - 1])
+  updateLegend(displayedCandle.value ?? undefined)
 }
 
 /** 将 Binance 周期转换为秒，用于判断 Signal 时刻实际归属哪根 K 线。 */
@@ -228,6 +232,7 @@ function updateSignalMarker(items: SignalChartCandle[]) {
 /** 将完整窗口写入全部图表序列，并恢复默认观察范围。 */
 function setChartCandles(items: SignalChartCandle[]) {
   visibleCandles = items
+  hoveredCandle.value = null
   candleCount.value = items.length
   const latest = items[items.length - 1]
   if (latest) applyPricePrecision(Number(latest.close))
@@ -265,6 +270,7 @@ function updateRealtimeCandle(item: SignalChartCandle) {
   else if (Number.isFinite(previousPrice) && currentPrice < previousPrice) latestPriceDirection.value = 'down'
   applyPricePrecision(Number(item.close))
   latestCandle.value = item
+  if (hoveredCandle.value?.time === item.time) hoveredCandle.value = item
   if (isNewCandle) visibleCandles.push(item)
   else if (visibleCandles.length) visibleCandles[visibleCandles.length - 1] = item
   candleCount.value = visibleCandles.length
@@ -279,7 +285,7 @@ function updateRealtimeCandle(item: SignalChartCandle) {
   const secondaryValue = emaValue(item, secondaryEmaPeriod.value)
   if (primaryValue != null) primaryEmaSeries?.update({ time, value: Number(primaryValue) })
   if (secondaryValue != null) secondaryEmaSeries?.update({ time, value: Number(secondaryValue) })
-  updateLegend(item)
+  updateLegend(hoveredCandle.value ?? item)
   lastRealtimeCandleTime = item.time
   if (isNewCandle) chart?.timeScale().scrollToRealTime()
 }
@@ -406,7 +412,13 @@ async function renderChart() {
     chart.priceScale('right').applyOptions({ minimumWidth: 84 })
     chart.timeScale().subscribeVisibleLogicalRangeChange(publishChartViewport)
     chart.subscribeCrosshairMove((param) => {
-      crosshairTime.value = typeof param.time === 'number' ? param.time : null
+      const time = typeof param.time === 'number' ? param.time : null
+      crosshairTime.value = time
+      // 使用原始 K 线对象可同时更新 OHLC、成交量、成交额和各周期 EMA。
+      hoveredCandle.value = time == null
+        ? null
+        : visibleCandles.find((item) => item.time === time) ?? null
+      updateLegend(displayedCandle.value ?? undefined)
     })
     if (data) setChartCandles(data.candles)
     // 移动端断点会同时改变容器宽高，图表必须同步两者，避免内部 Canvas 保留桌面高度。
@@ -464,15 +476,15 @@ onUnmounted(() => {
     <div class="chart-head">
       <div class="chart-primary">
         <div class="chart-copy"><h2><CoinIcon :symbol="symbol" :size="16" />{{ symbol }}<el-tooltip v-if="isTradfi" content="TradFi"><el-tag class="chart-tradfi" type="warning" effect="plain" size="small">T</el-tag></el-tooltip><span>· {{ selectedTimeframe }}</span></h2><span>{{ mode === 'realtime' ? '实时行情' : '检测时刻快照' }} · UTC+8 · 共 {{ candleCount }} 根 K 线</span></div>
-        <div v-if="latestCandle" class="market-strip">
-          <div class="market-item latest"><span>最新价格</span><strong :class="latestPriceDirection">{{ formatMarketPrice(latestCandle.close) }}</strong></div>
-          <div class="market-item"><span>变化</span><strong :class="candleChangePercent(latestCandle) >= 0 ? 'up' : 'down'">{{ candleChangePercent(latestCandle) >= 0 ? '+' : '' }}{{ candleChangePercent(latestCandle).toFixed(2) }}%</strong></div>
-          <div class="market-item"><span>开</span><strong>{{ formatMarketPrice(latestCandle.open) }}</strong></div>
-          <div class="market-item"><span>高</span><strong>{{ formatMarketPrice(latestCandle.high) }}</strong></div>
-          <div class="market-item"><span>低</span><strong>{{ formatMarketPrice(latestCandle.low) }}</strong></div>
-          <div class="market-item"><span>收</span><strong>{{ formatMarketPrice(latestCandle.close) }}</strong></div>
-          <div class="market-item"><span>量</span><strong>{{ formatMarketVolume(latestCandle.volume) }}</strong></div>
-          <div class="market-item"><span>额</span><strong>${{ formatMarketVolume(latestCandle.quote_volume) }}</strong></div>
+        <div v-if="displayedCandle" class="market-strip">
+          <div class="market-item latest"><span>{{ hoveredCandle ? '光标价格' : '最新价格' }}</span><strong :class="hoveredCandle ? '' : latestPriceDirection">{{ formatMarketPrice(displayedCandle.close) }}</strong></div>
+          <div class="market-item"><span>变化</span><strong :class="candleChangePercent(displayedCandle) >= 0 ? 'up' : 'down'">{{ candleChangePercent(displayedCandle) >= 0 ? '+' : '' }}{{ candleChangePercent(displayedCandle).toFixed(2) }}%</strong></div>
+          <div class="market-item"><span>开</span><strong>{{ formatMarketPrice(displayedCandle.open) }}</strong></div>
+          <div class="market-item"><span>高</span><strong>{{ formatMarketPrice(displayedCandle.high) }}</strong></div>
+          <div class="market-item"><span>低</span><strong>{{ formatMarketPrice(displayedCandle.low) }}</strong></div>
+          <div class="market-item"><span>收</span><strong>{{ formatMarketPrice(displayedCandle.close) }}</strong></div>
+          <div class="market-item"><span>量</span><strong>{{ formatMarketVolume(displayedCandle.volume) }}</strong></div>
+          <div class="market-item"><span>额</span><strong>${{ formatMarketVolume(displayedCandle.quote_volume) }}</strong></div>
         </div>
       </div>
       <div class="chart-tools">
