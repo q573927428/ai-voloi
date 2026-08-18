@@ -47,7 +47,7 @@ main { min-width: 0; }
 .negative { color: #c54d4a; }
 .oi-change { display: grid; justify-items: end; line-height: 1.25; }
 .oi-change small { color: #7d8997; font-size: 10px; font-weight: 500; }
-.detail-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; border: 1px solid #dfe4e9; border-radius: 7px; overflow: hidden; background: #dfe4e9; }
+.detail-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1px; border: 1px solid #dfe4e9; border-radius: 7px; overflow: hidden; background: #dfe4e9; }
 .detail-section { padding: 22px; background: #fff; }
 .detail-section h2 { margin: 0 0 18px; font-size: 15px; }
 .kv { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 9px 0; border-bottom: 1px solid #edf0f3; font-size: 13px; }

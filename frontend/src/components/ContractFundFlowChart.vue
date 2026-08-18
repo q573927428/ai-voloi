@@ -6,6 +6,7 @@ import * as echarts from 'echarts'
 import type { ECharts, EChartsOption, TooltipComponentFormatterCallbackParams } from 'echarts'
 import { api, errorMessage } from '../api/client'
 import type { ContractFundFlowData, FundFlowRegime } from '../types'
+import { resolvePricePrecision } from '../utils/price'
 
 /** 合约资金流图表定位信息，周期与上方 K 线保持同步。 */
 interface ContractFundFlowChartProps {
@@ -48,6 +49,19 @@ function percent(value?: string | number | null): string {
   return Number.isFinite(number) ? `${number > 0 ? '+' : ''}${number.toFixed(2)}%` : '—'
 }
 
+/**
+ * 使用与 K 线图相同的动态精度展示完整价格。
+ * 价格轴必须避免紧凑缩写，否则用户无法直接与上方 K 线刻度对照。
+ */
+function formatPrice(value: number, precision: number): string {
+  return Number.isFinite(value)
+    ? value.toLocaleString('zh-CN', {
+        minimumFractionDigits: precision,
+        maximumFractionDigits: precision,
+      })
+    : '—'
+}
+
 /** 使用固定 UTC+8 输出横轴与提示框时间。 */
 function formatTime(unixSeconds: number, detailed = false): string {
   return new Intl.DateTimeFormat('zh-CN', {
@@ -64,6 +78,8 @@ function renderChart() {
   if (!chart || !data.value) return
   const points = data.value.points
   const categories = points.map((point) => formatTime(point.time))
+  const latestPrice = Number(points[points.length - 1]?.close)
+  const pricePrecision = resolvePricePrecision(latestPrice)
   const option: EChartsOption = {
     animationDuration: 250,
     grid: [
@@ -92,7 +108,7 @@ function renderChart() {
         return [
           formatTime(point.time, true),
           `主动净流：${compact(point.net_taker_flow)} USDT`,
-          `价格：${Number(point.close).toLocaleString('zh-CN', { maximumFractionDigits: 10 })}（${percent(point.price_change_percent)}）`,
+          `价格：${formatPrice(Number(point.close), pricePrecision)}（${percent(point.price_change_percent)}）`,
           `OI 变化：${compact(point.open_interest_change)}（${percent(point.open_interest_change_percent)}）`,
           `状态：${state}`,
         ].join('<br/>')
@@ -104,7 +120,7 @@ function renderChart() {
     ],
     yAxis: [
       { type: 'value', gridIndex: 0, position: 'left', axisLabel: { color: '#7d8997', fontSize: 10, formatter: (value: number) => compact(value) }, splitLine: { lineStyle: { color: '#edf0f3' } } },
-      { type: 'value', gridIndex: 0, position: 'right', scale: true, axisLabel: { color: '#b18113', fontSize: 10, formatter: (value: number) => compact(value) }, splitLine: { show: false } },
+      { type: 'value', gridIndex: 0, position: 'right', scale: true, axisLabel: { color: '#b18113', fontSize: 10, formatter: (value: number) => formatPrice(value, pricePrecision) }, splitLine: { show: false } },
       { type: 'value', gridIndex: 1, position: 'left', axisLabel: { color: '#7d8997', fontSize: 10, formatter: (value: number) => `${value.toFixed(1)}%` }, splitLine: { lineStyle: { color: '#edf0f3' } } },
     ],
     dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], start: 0, end: 100 }],
